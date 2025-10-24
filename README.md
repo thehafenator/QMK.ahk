@@ -1,70 +1,71 @@
-# QMK.ahk - Context-Sensitive Keyboard Shortcuts in AutoHotkey v2
+# QMK.ahk - Keyboard Layers and Home Row Modifiers in AutoHotkey v2
 
 ---
 ## TLDR:
+QMK is a powerful open-source firmware for mechanical keyboards, enabling custom key mappings, layers, and shortcuts for enhanced productivity and ergonomics. This AutoHotkey v2 script, split into `QMK.ahk` (core logic) and `QMKConfig.ahk` for user-defined shortcuts  brings QMK-like functionality to any keyboard on Windows. It supports **homerow modifiers** (e.g., using `a` as Ctrl), **hold actions** (e.g., hold `h` to snap a window left), **combos** (e.g., `a` + `h` for an actions), and **instant combos** for quick triggers. Benefits include streamlined workflows, reduced finger movement, and highly customizable shortcuts, making it ideal for power users, programmers, and anyone seeking a more efficient keyboard experience.
+Similar to my `MouseGestures.ahk` and `8BitDo.ahk` scripts, it uses **context-aware mappings** with global fallbacks, so you only define common actions once. With `OnWebsite.ahk` and Descolada's UIA library, you can create **website-specific** hold shortcuts as well. If enough interest, I may expand that context specificity to combos as well.
 
-For those who are unfamiliar, QMK is a powerful open-source firmware for mechanical keyboards that allow users to customize key combinations on their keyboard at the firmware level, enabling custom key mappings, layers, shortcuts, and improved ergonomics. 
+## Examples:
+- Custom layer/combos - Holding the 'v' key - and pressing either h, j, k, l for media controls, or 'c' and keys on the right of the keyboard for a numpad without moving your hands. Any key can become it's own 'modifier' of sorts.
+- Hold-Actions - Holding 'c' alone past threshold to trigger an action like launch/hide a program. Can be context sensitive.
+- Homerow mods - 'a' can be mapped to control, 's' to Shift, and'd' to Win when held down, normally, 'a', 's', 'd' - pressed with k will send Control+Shift+Win+k.
 
----
-QMK is a powerful open-source firmware for mechanical keyboards, enabling custom key mappings, layers, and shortcuts for enhanced productivity and ergonomics. This AutoHotkey v2 script, split into `QMKClass.ahk` (core logic) and `QMK.ahk`  brings QMK-like functionality to any keyboard on Windows. It supports **homerow modifiers** (e.g., using `a` as Ctrl), **hold actions** (e.g., hold `h` to snap a window left), **combos** (e.g., `a` + `h` for actions), and **instant combos** for quick triggers. Benefits include streamlined workflows, reduced finger movement, and highly customizable shortcuts, making it ideal for power users, programmers, and anyone seeking a more efficient keyboard experience.
-The `QMK` class enables advanced, context-sensitive keyboard shortcuts inspired by QMK firmware for mechanical keyboards. User-defined shortcuts are specified in `QMK.ahk`, supporting **homerow modifiers**, **hold actions**, **combos**, and **instant combos** with global and program-specific mappings. Similar to my `MouseGestures.ahk` and `8BitDo.ahk` scripts, it uses **context-aware mappings** with global fallbacks, so you only define common actions once. With `OnWebsite.ahk` and Descolada's UIA library, you can create **website-specific** hold shortcuts.
+## Benefits/key keatures inlude:
+- Ability to try qmk/zmk-like functionatlity without the need to flash firmware. Edits can be made quickly and reloaded.
+- Simpler Syntax, plugs directly into your existing Autohotkey functions
+- Buffering and Rollover Support - keys are buffered with a 'First-in-first-out' approach. Even if you release your keys in a slightly different order, they are processed by the oldest in the queue.
+- Home row modifiers - supports 'stacking' - if 'a' is control, and 's' is shift, you can press 'asl' and have it send the keys ^+l. One benefit is reduced movement of fingers from the homerow, potentially reducing wrist pain.
+- SetupCombo and Setupinstantcombo - any two keys can trigger an action. The former allows rollover support.
+- Very accurate timing from query performance counter - to the microsecond, even if on heavy load or on battery saver.
+- Light. Tested on a 10+ year-old laptop with no noticeable delay/lag.
+-  QMK.ahk does not affect the functionality of normal hotkeys/hotstrings from firing.
 
-**Key Features:**
-- **Homerow Modifiers**: Assign modifier behavior (Ctrl, Shift, Alt, Win) to regular keys (e.g., `a` as Ctrl).
-- **Hold Actions**: Execute actions when a key is held beyond a threshold (e.g., hold `h` to snap a window left).
-- **Combos**: Trigger actions by pressing two keys in sequence (e.g., `a` + `h` to snap left).
-- **Instant Combos**: Immediate combo triggers for specific key pairs, bypassing delays.
-- **Context-Aware**: Different hold actions for specific programs, windows, or websites; combos are less context-sensitive.
-- **Smart Fallbacks**: Define global actions, override for specific contexts.
-- **Browser Integration**: Website-specific hold shortcuts with `OnWebsite.ahk`.
-
----
+## Basic timing logic:
+  - Keys that are pressed separately go through very little processing, sent nearly insantly through the buffer
+  - When 2 or more keys overlap
+        - Normal typing - All released withing threshold (200ms) => sent as taps in order they were typed 
+        - 'Quick' - retroactive and proactive
+                - Either 200ms after the first key was pressed down (retroactive), or if the second key pressed up before then (proactive) >> action occurs
+        - Held - if held past threshold, modifiers, combos, etc. Fires with little to no delay
+------
 
 ## Quick Example
 
-In `QMK.ahk`, define user shortcuts using the `QMK` class from `QMKClass.ahk`:
+In `QMKConfig.ahk`, define user shortcuts:
 
+``
     QMK.SetupModifier("a", "Ctrl")  ; 'a' acts as Ctrl when held
     QMK.SetupHold("h", ["global"], (*) => mm.SnapLeft("A"))  ; Hold h to snap left
     QMK.SetupCombo("a", "h", (*) => mm.SnapLeft("A"))  ; a+h snaps window left
     QMK.SetupInstantCombo("a", ";", (*) => SendEvent("{Backspace}"))  ; a+; instantly sends Backspace
-    QMK.SetupHold("k", ["youtube.com"], (*) => Send("{Space}"))  ; Hold k on YouTube to play/pause
-
-**How it works:**
-The `QMK` class in `QMKClass.ahk` tracks key presses, releases, and timing to distinguish between taps, holds, and combos. It buffers key events, checks for modifier, hold, or combo conditions, and triggers actions based on context and timing. User shortcuts in `QMK.ahk` leverage this logic. Context-sensitive holds are fully supported, while combos are primarily global with limited context sensitivity.
-
----
-
-## Key Concepts
-
-| Feature | Description |
-|---------|-------------|
-| **Modifier** | A key (e.g., `a`) acts as a modifier (Ctrl, Shift, Alt, Win) when held. |
-| **Hold** | Hold a key past the threshold (default 150ms) to trigger an action, supports context-specific mappings. |
-| **Combo** | Press two keys in sequence to trigger an action, primarily global with limited context support. |
-| **Instant Combo** | Immediate combo trigger, ignoring quiet period for faster execution. |
+    QMK.SetupHold("k", ["youtube.com"], (*) => Send("{Space}"))  ; Hold k on YouTube to play/pause. 
+``
 
 ---
 
 ## Getting Started
 
-Download the source code, unzip, and open `QMK.ahk` in an editor to view or modify user-defined shortcuts. The core logic resides in `QMKClass.ahk`. Dependencies are included in the same folder, so double-clicking `QMK.ahk` should run it.
+Download the source code on Github, unzip it, and open `QMKConfig.ahk` in an editor to view or modify user-defined shortcuts. I have a few suggestions to get you started, but feel free to edit as you'd like! The core logic resides in `QMK.ahk` File. Dependencies are included in the same folder, so double-clicking `QMK.ahk` should run it.
+
+---
 
 **Required Files:**
-
+``
     #Requires AutoHotkey v2.0
-    #Include QMKClass.ahk  ; Core class for shortcut logic
-    #Include QMK.ahk  ; User-defined shortcuts
+    #Include QMK ; Core class for shortcut logic
+    #Include QMKConfig.ahk  ; User-defined shortcuts
+``
 
 **Recommended Dependencies (optional, can be deleted if not needed):**
-
+``
     #Include OnWebsite.ahk  ; URL caching for website-specific shortcuts
     #Include UIA\Lib\UIA.ahk  ; Browser automation
     #Include UIA\Lib\UIA_Browser.ahk  ; Browser-specific automation
     #Include MonitorManager.ahk  ; Window snapping and monitor management
-    #Include scroll.ahk  ; Scroll utilities
-    #Include mouse.ahk  ; Mouse utilities
-    #Include TabActivator.ahk  ; Tab activation utilities
+    #Include scroll.ahk  ; Smooth Scrolling
+    #Include mouse.ahk  ; Move the mouse using a layer
+    #Include TabActivator.ahk  ; Activate a specific tab in Edge. If already on tab, cycle through to next instance. Updates in background.
+``
 
 ---
 
