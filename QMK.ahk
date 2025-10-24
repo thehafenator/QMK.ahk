@@ -1,6 +1,7 @@
 #Requires AutoHotkey v2.0
 #SingleInstance Force
 
+#Include QMKConfig.ahk
 
 ; ProcessSetPriority("High")  ; Turn this on if noticing delay to prioritize the script Options: Low, BelowNormal, Normal, AboveNormal, High, Realtime. Realtime can make things unstable.
 ; Additional options you can try to turn on if running on an older piece of hardware. I haven't had issues though with this script with my computer's settings at near zero, but here in case. It is fairly lightweight
