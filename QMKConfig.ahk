@@ -1,6 +1,21 @@
 #Requires AutoHotkey v2.0
 #SingleInstance Force
 
+; ProcessSetPriority("High")  ; Turn this on if noticing delay to prioritize the script Options: Low, BelowNormal, Normal, AboveNormal, High, Realtime. Realtime can make things unstable.
+
+; Additional options you can try to turn on if running on an older piece of hardware. I haven't had issues though with this script with my computer's settings at near zero, but here in case. It is already fairly lightweight:
+; SetKeyDelay(-1, 0)
+; SetDefaultMouseSpeed(0)
+; SetMouseDelay(0)
+; SetControlDelay(-1)
+; SetWinDelay(-1)
+; SetControlDelay(-1)
+; A_HotkeyInterval := 2000 
+; A_MaxHotkeysPerInterval := 200
+
+; Required
+#Include QMKClass.ahk ; houses the decision logic
+
 ; Reccommended dependencies (mostly for first-time use to assess potential functionality, feel free to delete what you would like)
 #Include Monitor Manager.ahk
 #Include scroll.ahk
@@ -295,6 +310,7 @@ QMK.SetupHold("j", ["ahk_class #32768"], (*) => (ToolTip("Closed Desktop!"), Set
 ; ^+j::+Down
 ; ^+c::^c
 ; #hotif
+
 
 
 
