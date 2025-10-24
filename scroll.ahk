@@ -1,7 +1,7 @@
 class Scroll {
     ; Configuration
-    static sensitivity := 1.0, ; this can be changed. Defalt 1.0
-    static smoothing := 8, ; this can be changed. Default 8
+    static sensitivity := 1.0 ; this can be changed. Defalt 1.0
+    static smoothing := 8 ; this can be changed. Default 8
     static updateRate := 20 ; this can be changed. Default 20
 
     ; State
@@ -48,4 +48,5 @@ class Scroll {
             }
         }
     }
+
 }
