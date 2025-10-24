@@ -22,10 +22,10 @@ static activaterun(winTitle, url := "", skipsearch := false, skipLoop := false, 
     if (skipLoop) {
         if (url != "") {
             if (showtooltips) {
-                ToolTip("Skip loop - running FunRun...")
+                ToolTip("Skip loop - running Run...")
                 SetTimer () => ToolTip(), -1000
             }
-            FunRun(url)
+            Run(url)
         }
         return
     }
@@ -36,7 +36,7 @@ static activaterun(winTitle, url := "", skipsearch := false, skipLoop := false, 
             ToolTip("Edge not found - activating Edge...")
             SetTimer () => ToolTip(), -1000
         }
-        FunRun(url)
+        Run(url)
         WinWaitActive("ahk_exe msedge.exe")
 
         ; Build initial cache for new Edge instance
@@ -51,36 +51,18 @@ static activaterun(winTitle, url := "", skipsearch := false, skipLoop := false, 
             if (InStr(StrLower(currentTitle), StrLower(winTitle))) {
                 matchingItems := tabactivator.findmatchesincache(winTitle)
                 if (matchingItems.Length == 1) {
-                    ; Check for Claude or Grok
-                    if (InStr(StrLower(winTitle), "claude")) {
-                        if (showtooltips) {
-                            ToolTip("On Claude tab with 1 match - calling switchbrowsers...")
-                            SetTimer () => ToolTip(), -1000
-                        }
-                        claude.switchbrowsers()
-                        return
-                    } else if (InStr(StrLower(winTitle), "grok")) {
-                        if (showtooltips) {
-                            ToolTip("On Grok tab with 1 match - calling switchbrowsers...")
-                            SetTimer () => ToolTip(), -1000
-                        }
-                        grok.switchbrowsers()
-                        return
-                    } else {
-                        ; Not Claude or Grok - create new tab with URL
                         if (url != "") {
                             if (showtooltips) {
                                 ToolTip("On matching tab with 1 match - creating new tab...")
                                 SetTimer () => ToolTip(), -1000
                             }
-                            FunRun(url)
+                            Run(url)
                             tabactivator.waitfornewTabandcache(winTitle)
                             tabactivator.startbackgroundcacheupdate()
                         }
                         return
                     }
                 }
-            }
         }
     }
 
@@ -245,7 +227,7 @@ class tabactivator {
                 ToolTip("No match found - creating new tab...")
                 SetTimer () => ToolTip(), -1000
             }
-            FunRun(url)
+            Run(url)
             ; Wait for new tab to be active, then add to cache
             tabactivator.waitfornewTabandcache(winTitle)
         }
@@ -272,7 +254,7 @@ class tabactivator {
                     ToolTip("No matches - creating new tab...")
                     SetTimer () => ToolTip(), -1000
                 }
-                FunRun(url)
+                Run(url)
                 tabactivator.waitfornewTabandcache(winTitle)
                 tabactivator.startbackgroundcacheupdate()
             }
@@ -306,7 +288,7 @@ class tabactivator {
                             ToolTip("Still no matches - creating new tab...")
                             SetTimer () => ToolTip(), -1000
                         }
-                        FunRun(url)
+                        Run(url)
                         tabactivator.waitfornewTabandcache(winTitle)
                     }
                 } else {
@@ -362,7 +344,7 @@ class tabactivator {
                         ToolTip("No matches after rebuild - creating new tab...")
                         SetTimer () => ToolTip(), -1000
                     }
-                    FunRun(url)
+                    Run(url)
                     tabactivator.waitfornewTabandcache(winTitle)
                 }
             } else {
@@ -404,10 +386,10 @@ class tabactivator {
                 ToolTip("No matches - activating Edge...")
                 SetTimer () => ToolTip(), -1000
             }
-            edge.activate()
+            Run("ahk_exe msedge.exe")
             WinWaitActive("ahk_exe msedge.exe")
             if (url != "") {
-                FunRun(url)
+                Run(url)
                 tabactivator.waitfornewTabandcache(winTitle)
                 tabactivator.startbackgroundcacheupdate()
             }
@@ -458,10 +440,10 @@ class tabactivator {
                     ToolTip("No matches after rebuild - activating Edge...")
                     SetTimer () => ToolTip(), -1000
                 }
-                edge.activate()
+                Run("ahk_exe msedge.exe")
                 WinWaitActive("ahk_exe msedge.exe")
                 if (url != "") {
-                    FunRun(url)
+                    Run(url)
                     tabactivator.waitfornewTabandcache(winTitle)
                 }
             } else {
@@ -494,7 +476,7 @@ class tabactivator {
             ToolTip("Edge inactive - activating and building cache...")
             SetTimer () => ToolTip(), -1000
         }
-        edge.activate()
+        Run("ahk_exe msedge.exe")
         WinWaitActive("ahk_exe msedge.exe")
         tabactivator.buildinitialcachewithotherbrowers(winTitle, url)
     }
