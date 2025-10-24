@@ -1,8 +1,6 @@
 #Requires AutoHotkey v2.0
 #SingleInstance Force
 
-#Include QMK.ahk
-
 ; Reccommended dependencies (mostly for first-time use to assess potential functionality, feel free to delete what you would like)
 #Include Monitor Manager.ahk
 #Include scroll.ahk
@@ -297,6 +295,7 @@ QMK.SetupHold("j", ["ahk_class #32768"], (*) => (ToolTip("Closed Desktop!"), Set
 ; ^+j::+Down
 ; ^+c::^c
 ; #hotif
+
 
 
 
