@@ -1,6 +1,19 @@
 #Requires AutoHotkey v2.0
 #SingleInstance Force
 
+
+; ProcessSetPriority("High")  ; Turn this on if noticing delay to prioritize the script Options: Low, BelowNormal, Normal, AboveNormal, High, Realtime. Realtime can make things unstable.
+; Additional options you can try to turn on if running on an older piece of hardware. I haven't had issues though with this script with my computer's settings at near zero, but here in case. It is fairly lightweight
+; SetKeyDelay(-1, 0)
+; SetDefaultMouseSpeed(0)
+; SetMouseDelay(0)
+; SetControlDelay(-1)
+; SetWinDelay(-1)
+; SetControlDelay(-1)
+; A_HotkeyInterval := 2000 
+; A_MaxHotkeysPerInterval := 200
+
+
 class QMK {
     ; User configuration section
     static userconfig := {
@@ -109,7 +122,7 @@ static BufferKeyDown(key) {
     inQuietPeriod := (currentTime - this.lastKeyTime) < this.comboQuietPeriod
     this.lastKeyTime := currentTime
 
-    ; STAGE 1: Traditional modifiers bypass
+    ; UP STAGE 1: Traditional modifiers bypass - when pressing a normal modier (such as the left physical control button), these shortcuts work fast and also clear the buffer. Press a traditional modifier if your buffer ever gets stuck
     if (this.modifierSet.Has(key)) {
         if (this.modifierMap.Has(key)) {
             this.modifierBitmask |= this.modifierMap[key]
@@ -118,7 +131,7 @@ static BufferKeyDown(key) {
         return
     }
 
-    ; STAGE 2: Traditional modifiers active - bypass buffering
+    ; UP STAGE 2: Traditional modifiers active - bypass buffering
     if (this.modifierBitmask > 0) {
         for bufferedKey, data in this.keyBuffer
             data.modifierPressed := true
@@ -135,10 +148,11 @@ static BufferKeyDown(key) {
         }
     }
 
-    ; STAGE 2.5: Check INSTANT combos first
+    ; UP STAGE 2.5: Check INSTANT combos first (always, even during quiet period)
     for buffKey, buffData in this.keyBuffer {
         if (buffData.isReleased)
             continue
+
         comboId := buffKey . "_" . key
         if (this.instantComboCallbacks.Has(comboId)) {
             this.TriggerInstantCombo(buffKey, key)
@@ -146,25 +160,28 @@ static BufferKeyDown(key) {
         }
     }
 
-    ; STAGE 2.6: Combo repeat mode
+    ; UP STAGE 2.6: Check if primary is in combo repeat mode - allows a combo like QMK.SetupCombo("a", "g", (*) => Send("!{Tab}")) to press the a key first hold it down, then press 'g' repeatedly.
     if (unreleasedModifierCount < 2) {
         for buffKey, buffData in this.keyBuffer {
             if (!buffData.inComboRepeatMode || buffData.isReleased)
                 continue
+
             comboId := buffKey . "_" . key
             if (this.comboCallbacks.Has(comboId)) {
-                this.TriggerComboImmediate(buffKey, key)
+                ; Primary still held in combo mode, secondary is being repeated
+                this.TriggerComboImmediate(buffKey, key) ; logic to trigger callback supported here
                 return
             }
         }
     }
 
-    ; STAGE 2.65: Check regular combos
+    ; UP STAGE 2.65: Check for regular combos BEFORE quiet period buffering
     hasRegisteredCombo := false
     if (unreleasedModifierCount < 2) {
         for buffKey, buffData in this.keyBuffer {
             if (buffData.isReleased || buffData.hasInterferingKeys)
                 continue
+
             comboId := buffKey . "_" . key
             if (this.comboCallbacks.Has(comboId)) {
                 hasRegisteredCombo := true
@@ -173,14 +190,17 @@ static BufferKeyDown(key) {
         }
     }
 
-    ; STAGE 2.66: Combo with quiet period
+    ; NEW STAGE 2.66: Check for regular combos with unreleased keys during quiet period
     if (hasRegisteredCombo) {
         for buffKey, buffData in this.keyBuffer {
             if (buffData.isReleased)
                 continue
+
             comboId := buffKey . "_" . key
             if (!this.comboCallbacks.Has(comboId))
                 continue
+
+            ; Found combo - buffer secondary and set timer
             this.keyBuffer[key] := {
                 downTime: currentTime,
                 hasInterferingKeys: false,
@@ -196,7 +216,9 @@ static BufferKeyDown(key) {
                 inQuietPeriod: inQuietPeriod
             }
             this.keyOrder.Push(key)
+
             elapsed := currentTime - buffData.downTime
+
             if (elapsed >= this.holdThreshold) {
                 timeSinceLastKey := currentTime - this.lastKeyTime
                 if (timeSinceLastKey >= this.comboQuietPeriod) {
@@ -207,16 +229,19 @@ static BufferKeyDown(key) {
             } else {
                 delay := this.holdThreshold - elapsed + this.comboQuietPeriod
             }
+
             timerFunc := ObjBindMethod(this, "TriggerComboWithQuietCheck", buffKey, key, currentTime)
             timerId := buffKey . "_" . key
             this.activeTimers[timerId] := timerFunc
             SetTimer(timerFunc, -delay)
+
             return
         }
     }
 
-    ; STAGE 2.7: Quiet period buffering
+    ; UP STAGE 2.7: If in quiet period, ALWAYS buffer (typing takes priority unless intentional chord or registered combo). Useful for typing normal words. For example, the word 'please' often has keyboard rolls and homerow keys that are modifiers. This checks that if we are typing, we mark those as tap
     if (inQuietPeriod && !hasRegisteredCombo) {
+        ; Check for non-modifier keys in buffer (indicates typing)
         hasNonModifierKeys := false
         for buffKey, buffData in this.keyBuffer {
             if (!buffData.isModifier) {
@@ -224,17 +249,25 @@ static BufferKeyDown(key) {
                 break
             }
         }
+
+        ; Set typing mode if non-modifier key pressed during quiet period
         if (!this.modifierKeys.Has(key)) {
             this.isTypingMode := true
         }
+
+        ; Calculate clean unreleased modifier count (skip contaminated)
         cleanUnreleasedModCount := 0
         for buffKey, buffData in this.keyBuffer {
             if (buffData.isModifier && !buffData.isReleased && !buffData.hasInterferingKeys) {
                 cleanUnreleasedModCount++
             }
         }
+
+        ; Check if this is an intentional multi-mod chord
         isIntentionalChord := (cleanUnreleasedModCount >= 2 && !hasNonModifierKeys && !this.isTypingMode)
+
         if (isIntentionalChord) {
+            ; Check if new key is same-mod partner
             isSameModPartner := false
             if (this.modifierKeys.Has(key)) {
                 newModName := this.modifierKeys[key]
@@ -245,40 +278,55 @@ static BufferKeyDown(key) {
                     }
                 }
             }
-            if (!this.modifierKeys.Has(key) || isSameModPartner) {
+
+            ; If NOT a modifier OR is same-mod partner, activate all clean mods and send
+            if (!this.modifierKeys.Has(key) || isSameModPartner) { ; this line either doesn't trigger the full 'ash' or the 'sh' or 'ah' for shift h or ^h timers are still going, because pressing ash (h non-modifier) does not trigger full
                 for buffKey, buffData in this.keyBuffer {
                     if (buffData.isModifier && !buffData.isReleased && !buffData.modifierActivated && !buffData.hasInterferingKeys) {
+                        ; Cancel any pending timers for this modifier
                         for timerId, timerFunc in this.activeTimers.Clone() {
                             if (InStr(timerId, buffKey . "_")) {
                                 SetTimer(timerFunc, 0)
                                 this.activeTimers.Delete(timerId)
                             }
                         }
+
                         this.activeModifiers[buffKey] := true
                         buffData.modifierActivated := true
                     }
                 }
+
                 this.SendModifiedKey(key)
+
                 for buffKey, buffData in this.keyBuffer {
                     if (buffData.isModifier && !buffData.isReleased) {
                         buffData.modifierTriggered := true
                     }
                 }
+
                 return
             }
         }
+
+        ; Determine if we should contaminate (force taps)
         shouldContaminate := hasNonModifierKeys || !this.modifierKeys.Has(key) || this.isTypingMode
+
         if (shouldContaminate) {
+            ; Cancel ALL active timers - we're in typing mode
             for timerId, timerFunc in this.activeTimers.Clone() {
                 SetTimer(timerFunc, 0)
                 this.activeTimers.Delete(timerId)
             }
+
+            ; Contaminate all existing keys AND clear their timer references
             for bufferedKey, data in this.keyBuffer {
                 data.hasInterferingKeys := true
-                data.sameModTimerId := ""
+                data.sameModTimerId := ""  ; Clear timer references
             }
         }
+
         isHomerowModifier := this.modifierKeys.Has(key)
+
         this.keyBuffer[key] := {
             downTime: currentTime,
             hasInterferingKeys: shouldContaminate,
@@ -293,22 +341,26 @@ static BufferKeyDown(key) {
             sameModTimerId: "",
             inQuietPeriod: inQuietPeriod
         }
+
         this.keyOrder.Push(key)
+
         if (this.keyOrder.Length > this.maxBufferSize) {
             oldKey := this.keyOrder.RemoveAt(1)
             if (this.keyBuffer.Has(oldKey))
                 this.keyBuffer.Delete(oldKey)
         }
-        return
+        return  ; ALWAYS return during quiet period
     }
 
-    ; STAGE 3: Active modifiers count
+
+
+    ; UP STAGE 3: Check active homerow modifiers - Allows us to press multiple keys that are modifiers and 'stack' them instantly for quick sending other keys
     activeModifierCount := 0
     for modKey, _ in this.activeModifiers {
         activeModifierCount++
     }
 
-    ; STAGE 3.5: Instant combo with single unreleased
+    ; UP STAGE 3.5: Check for instant combos with any unreleased key
     unreleasedCount := 0
     for buffKey, buffData in this.keyBuffer {
         if (!buffData.isReleased) {
@@ -319,6 +371,7 @@ static BufferKeyDown(key) {
         for buffKey, buffData in this.keyBuffer {
             if (buffData.isReleased)
                 continue
+
             comboId := buffKey . "_" . key
             if (this.instantComboCallbacks.Has(comboId)) {
                 this.TriggerInstantCombo(buffKey, key)
@@ -327,16 +380,19 @@ static BufferKeyDown(key) {
         }
     }
 
-    ; STAGE 3.75: Multiple modifiers past threshold
+    ; UP STAGE 3.75: Check for multiple unreleased modifiers past threshold ; 
     unreleasedModsPastThreshold := []
     for buffKey, buffData in this.keyBuffer {
         if (!buffData.isModifier || buffData.isReleased)
             continue
+
         elapsed := currentTime - buffData.downTime
         if (elapsed >= this.holdThreshold) {
             unreleasedModsPastThreshold.Push(buffKey)
         }
     }
+
+    ; If we have 2+ modifiers past threshold, activate them all and send modified key
     if (unreleasedModsPastThreshold.Length >= 2) {
         for modKey in unreleasedModsPastThreshold {
             if (!this.activeModifiers.Has(modKey)) {
@@ -344,15 +400,19 @@ static BufferKeyDown(key) {
                 this.keyBuffer[modKey].modifierActivated := true
             }
         }
+
         this.SendModifiedKey(key)
+
         for modKey in unreleasedModsPastThreshold {
             this.keyBuffer[modKey].modifierTriggered := true
         }
+
         return
     }
 
-    ; STAGE 4: Active modifiers present
+    ; UP STAGE 4: Active homerow modifiers present
     if (activeModifierCount > 0) {
+        ; Check instant combos FIRST (before modifier stacking) but only for single modifier
         if (activeModifierCount == 1) {
             for modKey, _ in this.activeModifiers {
                 comboId := modKey . "_" . key
@@ -364,6 +424,8 @@ static BufferKeyDown(key) {
                 }
             }
         }
+
+        ; Check regular combos (Combo Supremacy) but only for single modifier
         if (activeModifierCount == 1) {
             for modKey, _ in this.activeModifiers {
                 comboId := modKey . "_" . key
@@ -375,7 +437,10 @@ static BufferKeyDown(key) {
                 }
             }
         }
+
+        ; New key is also a modifier - check for combo FIRST before stacking
         if (this.modifierKeys.Has(key)) {
+            ; Check if there's a combo registered with any active modifier
             for modKey, _ in this.activeModifiers {
                 comboId := modKey . "_" . key
                 if (this.comboCallbacks.Has(comboId)) {
@@ -385,6 +450,8 @@ static BufferKeyDown(key) {
                     }
                 }
             }
+
+            ; No combo - proceed with stacking logic
             newModType := this.modifierKeys[key]
             modTypeAlreadyActive := false
             for modKey, _ in this.activeModifiers {
@@ -425,6 +492,8 @@ static BufferKeyDown(key) {
             }
             return
         }
+
+        ; Multiple modifiers OR regular key with modifiers
         if (activeModifierCount > 1) {
             this.SendModifiedKey(key)
             for modKey, _ in this.activeModifiers {
@@ -434,6 +503,8 @@ static BufferKeyDown(key) {
             }
             return
         }
+
+        ; No combo - send as modified key
         this.SendModifiedKey(key)
         for modKey, _ in this.activeModifiers {
             if (this.keyBuffer.Has(modKey)) {
@@ -443,33 +514,41 @@ static BufferKeyDown(key) {
         return
     }
 
-    ; STAGE 5: Held keys past threshold - FIXED
+    ; UP STAGE 5: Check for held keys past threshold (Fast path for modifiers/combos)
     if (unreleasedModifierCount < 2) {
         for buffKey, buffData in this.keyBuffer {
             if (buffData.isReleased)
                 continue
+
             elapsed := currentTime - buffData.downTime
             if (elapsed < this.holdThreshold)
                 continue
+
+            ; Check instant combos FIRST
             comboId := buffKey . "_" . key
             if (this.instantComboCallbacks.Has(comboId)) {
                 this.TriggerInstantCombo(buffKey, key)
                 return
             }
+
+            ; Modifier past threshold - check for combo FIRST (before modifier activation)
             if (buffData.isModifier) {
                 if (this.comboCallbacks.Has(comboId)) {
                     this.TriggerComboImmediate(buffKey, key)
                     return
                 }
-                ; ===activate even if new key is modifier ===
-                this.activeModifiers[buffKey] := true
-                buffData.modifierActivated := true
-                buffData.modifierTriggered := true
+
+                ; No combo found - if new key is NOT a modifier, activate modifier and send modified key
                 if (!this.modifierKeys.Has(key)) {
+                    this.activeModifiers[buffKey] := true
+                    buffData.modifierActivated := true
                     this.SendModifiedKey(key)
+                    buffData.modifierTriggered := true
                     return
                 }
             }
+
+            ; Check for regular combo with any held key
             if (this.comboCallbacks.Has(comboId)) {
                 this.TriggerComboImmediate(buffKey, key)
                 return
@@ -477,79 +556,183 @@ static BufferKeyDown(key) {
         }
     }
 
-    ; STAGE 6: Same-modifier keys
-    if (this.modifierKeys.Has(key)) {
-        newModName := this.modifierKeys[key]
-        if (unreleasedModifierCount >= 2) {
-            for buffKey, buffData in this.keyBuffer {
-                if (!buffData.isModifier || buffData.isReleased)
-                    continue
-                buffModName := this.modifierKeys[buffKey]
-                if (buffModName == newModName) {
-                    for modKey, modData in this.keyBuffer {
-                        if (modData.isModifier && !modData.isReleased) {
-                            for timerId, timerFunc in this.activeTimers.Clone() {
-                                if (InStr(timerId, modKey . "_")) {
-                                    SetTimer(timerFunc, 0)
-                                    this.activeTimers.Delete(timerId)
-                                }
+    ; ; UP STAGE 6: Check for same-modifier keys (before multi-modifier detection)
+    ; if (this.modifierKeys.Has(key)) {
+    ;     newModName := this.modifierKeys[key]
+
+    ;     ; FIRST: Check if 2+ other modifiers already unreleased (multi-mod takes priority)
+    ;     ; If 2+ mods down and new key is same-mod partner, treat as modifier and send immediately
+    ;     if (unreleasedModifierCount >= 2) {
+    ;         for buffKey, buffData in this.keyBuffer {
+    ;             if (!buffData.isModifier || buffData.isReleased)
+    ;                 continue
+
+    ;             buffModName := this.modifierKeys[buffKey]
+    ;             if (buffModName == newModName) {
+    ;                 ; Found same-mod partner - cancel timers and activate ALL unreleased mods
+    ;                 for modKey, modData in this.keyBuffer {
+    ;                     if (modData.isModifier && !modData.isReleased) {
+    ;                         ; Cancel any pending timers for this modifier
+    ;                         for timerId, timerFunc in this.activeTimers.Clone() {
+    ;                             if (InStr(timerId, modKey . "_")) {
+    ;                                 SetTimer(timerFunc, 0)
+    ;                                 this.activeTimers.Delete(timerId)
+    ;                             }
+    ;                         }
+
+    ;                         this.activeModifiers[modKey] := true
+    ;                         modData.modifierActivated := true
+    ;                         modData.modifierTriggered := true
+    ;                     }
+    ;                 }
+    ;                 this.SendModifiedKey(key)
+    ;                 return
+    ;             }
+    ;         }
+    ;     }
+    ;     ; If 2+ mods down, skip same-mod logic (treat as normal key or stack)
+    ;     if (unreleasedModifierCount < 2) {
+    ;         for buffKey, buffData in this.keyBuffer {
+    ;             if (!buffData.isModifier || buffData.isReleased || buffData.modifierActivated)
+    ;                 continue
+
+    ;             buffModName := this.modifierKeys[buffKey]
+    ;             if (buffModName != newModName)
+    ;                 continue
+
+    ;             timeDiff := currentTime - buffData.downTime
+
+    ;             ; Within threshold - set up for fast typing or modifier behavior
+    ;             if (timeDiff < this.holdThreshold) {
+    ;                 ; Contaminate primary to prevent hold
+    ;                 buffData.hasInterferingKeys := true
+
+    ;                 ; Buffer new key as non-modifier
+    ;                 this.keyBuffer[key] := {
+    ;                     downTime: currentTime,
+    ;                     hasInterferingKeys: false,
+    ;                     isReleased: false,
+    ;                     comboTriggered: false,
+    ;                     modifierPressed: false,
+    ;                     isModifier: false,
+    ;                     modifierActivated: false,
+    ;                     modifierTriggered: false,
+    ;                     inComboRepeatMode: false,
+    ;                     action: "",
+    ;                     sameModTimerId: "",
+    ;                     sameModPartner: buffKey,
+    ;                     inQuietPeriod: inQuietPeriod
+    ;                 }
+    ;                 this.keyOrder.Push(key)
+
+    ;                 ; Set timer on first key for threshold check
+    ;                 remaining := this.holdThreshold - timeDiff
+    ;                 timerFunc := ObjBindMethod(this, "SameModifierThreshold", buffKey, key)
+    ;                 timerId := buffKey . "_sameMod_" . key
+    ;                 buffData.sameModTimerId := timerId
+    ;                 this.activeTimers[timerId] := timerFunc
+    ;                 SetTimer(timerFunc, -remaining)
+    ;                 return
+    ;             }
+
+    ;             ; Past threshold - activate as modifier and send modified key
+    ;             this.activeModifiers[buffKey] := true
+    ;             buffData.modifierActivated := true
+    ;             this.SendModifiedKey(key)
+    ;             buffData.modifierTriggered := true
+    ;             return
+    ;         }
+    ;     }
+    ; }
+
+    ; UP STAGE 6: Check for same-modifier keys (before multi-modifier detection)
+if (this.modifierKeys.Has(key)) {
+    newModName := this.modifierKeys[key]
+
+    ; FIRST: Check if 2+ other modifiers already unreleased (multi-mod takes priority)
+    ; If 2+ mods down and new key is same-mod partner, treat as modifier and send immediately
+    if (unreleasedModifierCount >= 2) {
+        for buffKey, buffData in this.keyBuffer {
+            if (!buffData.isModifier || buffData.isReleased)
+                continue
+
+            buffModName := this.modifierKeys[buffKey]
+            if (buffModName == newModName) {
+                ; Found same-mod partner - cancel timers and activate ALL unreleased mods
+                for modKey, modData in this.keyBuffer {
+                    if (modData.isModifier && !modData.isReleased) {
+                        ; Cancel any pending timers for this modifier
+                        for timerId, timerFunc in this.activeTimers.Clone() {
+                            if (InStr(timerId, modKey . "_")) {
+                                SetTimer(timerFunc, 0)
+                                this.activeTimers.Delete(timerId)
                             }
-                            this.activeModifiers[modKey] := true
-                            modData.modifierActivated := true
-                            modData.modifierTriggered := true
                         }
+
+                        this.activeModifiers[modKey] := true
+                        modData.modifierActivated := true
+                        modData.modifierTriggered := true
                     }
-                    this.SendModifiedKey(key)
-                    return
                 }
-            }
-        }
-        if (unreleasedModifierCount < 2) {
-            for buffKey, buffData in this.keyBuffer {
-                if (!buffData.isModifier || buffData.isReleased || buffData.modifierActivated)
-                    continue
-                buffModName := this.modifierKeys[buffKey]
-                if (buffModName != newModName)
-                    continue
-                timeDiff := currentTime - buffData.downTime
-                if (timeDiff < this.holdThreshold) {
-                    this.keyBuffer[key] := {
-                        downTime: currentTime,
-                        hasInterferingKeys: false,
-                        isReleased: false,
-                        comboTriggered: false,
-                        modifierPressed: false,
-                        isModifier: true,
-                        modifierActivated: false,
-                        modifierTriggered: false,
-                        inComboRepeatMode: false,
-                        action: "",
-                        sameModTimerId: "",
-                        sameModPartner: buffKey,
-                        inQuietPeriod: inQuietPeriod
-                    }
-                    this.keyOrder.Push(key)
-                    remaining := this.holdThreshold - timeDiff
-                    timerFunc := ObjBindMethod(this, "SameModifierThreshold", buffKey, key)
-                    timerId := buffKey . "_sameMod_" . key
-                    buffData.sameModTimerId := timerId
-                    this.activeTimers[timerId] := timerFunc
-                    SetTimer(timerFunc, -remaining)
-                    return
-                }
-                this.activeModifiers[buffKey] := true
-                buffData.modifierActivated := true
                 this.SendModifiedKey(key)
-                buffData.modifierTriggered := true
                 return
             }
         }
     }
+    ; If 2+ mods down, skip same-mod logic (treat as normal key or stack)
+    if (unreleasedModifierCount < 2) {
+        for buffKey, buffData in this.keyBuffer {
+            if (!buffData.isModifier || buffData.isReleased || buffData.modifierActivated)
+                continue
 
-    ; STAGE 7: Instant combos
+            buffModName := this.modifierKeys[buffKey]
+            if (buffModName != newModName)
+                continue
+
+            timeDiff := currentTime - buffData.downTime
+
+            ; Within threshold - set up for fast typing or modifier behavior
+            if (timeDiff < this.holdThreshold) {
+                this.keyBuffer[key] := {
+                    downTime: currentTime,
+                    hasInterferingKeys: false,
+                    isReleased: false,
+                    comboTriggered: false,
+                    modifierPressed: false,
+                    isModifier: true, ; Treat as modifier
+                    modifierActivated: false,
+                    modifierTriggered: false,
+                    inComboRepeatMode: false,
+                    action: "",
+                    sameModTimerId: "",
+                    sameModPartner: buffKey,
+                    inQuietPeriod: inQuietPeriod
+                }
+                this.keyOrder.Push(key)
+                remaining := this.holdThreshold - timeDiff
+                timerFunc := ObjBindMethod(this, "SameModifierThreshold", buffKey, key)
+                timerId := buffKey . "_sameMod_" . key
+                buffData.sameModTimerId := timerId
+                this.activeTimers[timerId] := timerFunc
+                SetTimer(timerFunc, -remaining)
+                return
+            }
+
+            ; Past threshold - activate as modifier and send modified key
+            this.activeModifiers[buffKey] := true
+            buffData.modifierActivated := true
+            this.SendModifiedKey(key)
+            buffData.modifierTriggered := true
+            return
+        }
+    }
+}
+
+    ; UP STAGE 7: Check for instant combos with unreleased keys
     for buffKey, buffData in this.keyBuffer {
         if (buffData.isReleased)
             continue
+
         comboId := buffKey . "_" . key
         if (this.instantComboCallbacks.Has(comboId)) {
             this.TriggerInstantCombo(buffKey, key)
@@ -557,11 +740,13 @@ static BufferKeyDown(key) {
         }
     }
 
-    ; STAGE 8: Normal buffering
+    ; UP STAGE 8: Normal buffering
     for bufferedKey, data in this.keyBuffer {
         data.hasInterferingKeys := true
     }
+
     isHomerowModifier := this.modifierKeys.Has(key)
+
     this.keyBuffer[key] := {
         downTime: currentTime,
         hasInterferingKeys: false,
@@ -576,7 +761,9 @@ static BufferKeyDown(key) {
         sameModTimerId: "",
         inQuietPeriod: inQuietPeriod
     }
+
     this.keyOrder.Push(key)
+
     if (this.keyOrder.Length > this.maxBufferSize) {
         oldKey := this.keyOrder.RemoveAt(1)
         if (this.keyBuffer.Has(oldKey))
@@ -588,7 +775,7 @@ static BufferKeyDown(key) {
 static BufferKeyUp(key) { 
     currentTime := this.GetTime()
 
-    ; STAGE 1: Traditional modifier handling
+    ; DOWN STAGE 1: Traditional modifier handling
     if (this.modifierSet.Has(key)) {
         if (this.modifierMap.Has(key))
             this.modifierBitmask &= ~this.modifierMap[key]
@@ -618,7 +805,7 @@ static BufferKeyUp(key) {
         }
     }
 
-; STAGE 1.4: PROACTIVE single-mod handling (one mod pressed quickly, then non-mod or different-type mod)
+; DOWN STAGE 1.4: PROACTIVE single-mod handling (one mod pressed quickly, then non-mod or different-type mod)
 if (duration < this.holdThreshold) {
     ; Check for exactly 1 unreleased modifier pressed quickly before this key
     singleMod := ""
@@ -693,7 +880,7 @@ if (duration < this.holdThreshold) {
     }
 }
 
-; STAGE 1.5: PROACTIVE multi-mod handling
+; DOWN STAGE 1.5: PROACTIVE multi-mod handling
 if (duration < this.holdThreshold) {  ; ← Remove the && !keyData.isModifier check
     ; Collect unreleased modifiers that were pressed quickly BEFORE this key
     quickMods := []
@@ -786,7 +973,7 @@ if (duration < this.holdThreshold) {  ; ← Remove the && !keyData.isModifier ch
     }
 }
 
-; STAGE 1.6: Multi-mod chord with any release timing
+; DOWN STAGE 1.6: Multi-mod chord with any release timing
 if (!keyData.isModifier || (keyData.isModifier && this.modifierKeys.Has(key))) {
     ; Collect ALL unreleased modifiers pressed before this key
     unreleasedMods := []
@@ -842,7 +1029,7 @@ if (!keyData.isModifier || (keyData.isModifier && this.modifierKeys.Has(key))) {
     }
 }
 
-    ; STAGE 2: Handle same-modifier key release
+    ; DOWN STAGE 2: Handle same-modifier key release
     if (keyData.HasProp("sameModPartner") && keyData.sameModPartner != "") {
         partnerKey := keyData.sameModPartner
         if (this.keyBuffer.Has(partnerKey)) {
@@ -870,7 +1057,194 @@ if (!keyData.isModifier || (keyData.isModifier && this.modifierKeys.Has(key))) {
         }
     }
 
-; STAGE 3: Handle homerow modifier release
+; ; DOWN STAGE 3: Handle homerow modifier release
+; if (keyData.isModifier) {
+;     ; Check for quick tap while OTHER modifiers are held or quick stack handling
+;     if (duration < this.holdThreshold) {
+;         totalUnreleasedKeys := 1
+;         otherModifiersHeld := []
+;         thisModType := this.modifierKeys[key]
+
+;         for buffKey, buffData in this.keyBuffer {
+;             if (buffKey == key)
+;                 continue
+;             if (buffData.isReleased)
+;                 continue
+
+;             totalUnreleasedKeys++
+
+;             if (buffData.isModifier && buffData.modifierActivated) {
+;                 otherModifiersHeld.Push(buffKey)
+;             }
+;         }
+
+;         if (otherModifiersHeld.Length > 0) {
+;             if (totalUnreleasedKeys == 2 && otherModifiersHeld.Length == 1) {
+;                 heldModKey := otherModifiersHeld[1]
+;                 comboId := heldModKey . "_" . key
+
+;                 if (this.comboCallbacks.Has(comboId) || this.instantComboCallbacks.Has(comboId)) {
+;                     this.TriggerComboImmediate(heldModKey, key)
+;                     return
+;                 }
+;             }
+
+;             modString := ""
+;             for modKey in otherModifiersHeld {
+;                 modName := this.modifierKeys[modKey]
+;                 switch modName {
+;                     case "Ctrl": modString .= "^"
+;                     case "Alt": modString .= "!"
+;                     case "Shift": modString .= "+"
+;                     case "Win": modString .= "#"
+;                 }
+;                 if (this.keyBuffer.Has(modKey)) {
+;                     this.keyBuffer[modKey].modifierTriggered := true
+;                 }
+;             }
+
+;             SendLevel 2
+;             SendEvent(modString . "{" . key . "}")
+
+;             this.keyBuffer.Delete(key)
+;             Loop this.keyOrder.Length {
+;                 if (this.keyOrder[A_Index] == key) {
+;                     this.keyOrder.RemoveAt(A_Index)
+;                     break
+;                 }
+;             }
+;             return
+;         }
+
+;         ; Check for same type non-activated
+;         for buffKey, buffData in this.keyBuffer {
+;             if (buffKey == key)
+;                 continue
+;             if (buffData.isModifier && !buffData.isReleased && buffData.downTime < keyData.downTime) {
+;                 if (this.modifierKeys[buffKey] != thisModType)
+;                     continue
+
+;                 timeSinceOtherMod := keyData.downTime - buffData.downTime
+;                 if (timeSinceOtherMod < this.modifierThreshold) {
+;                     if (!this.activeModifiers.Has(buffKey)) {
+;                         this.activeModifiers[buffKey] := true
+;                         buffData.modifierActivated := true
+;                     }
+;                     buffData.modifierTriggered := true
+
+;                     modName := this.modifierKeys[buffKey]
+;                     modString := ""
+;                     switch modName {
+;                         case "Ctrl": modString := "^"
+;                         case "Alt": modString .= "!"
+;                         case "Shift": modString .= "+"
+;                         case "Win": modString := "#"
+;                     }
+
+;                     SendLevel 2
+;                     SendEvent(modString . "{" . key . "}")
+
+;                     this.keyBuffer.Delete(key)
+;                     Loop this.keyOrder.Length {
+;                         if (this.keyOrder[A_Index] == key) {
+;                             this.keyOrder.RemoveAt(A_Index)
+;                             break
+;                         }
+;                     }
+;                     return
+;                 }
+;             }
+;         }
+;     }
+
+;     ; Stacked check only if not already handled
+;     if (duration < this.holdThreshold && keyData.modifierActivated && !keyData.modifierTriggered) {
+;         ; Find other stacked modifiers that were activated with this one
+;         stackedModifiers := []
+;         for buffKey, buffData in this.keyBuffer {
+;             if (buffKey == key)
+;                 continue
+;             if (buffData.isModifier && buffData.modifierActivated && !buffData.modifierTriggered && !buffData.isReleased) {
+;                 ; Check if they were activated together (within threshold)
+;                 timeDiff := Abs(buffData.downTime - keyData.downTime)
+;                 if (timeDiff < this.modifierThreshold) {
+;                     stackedModifiers.Push(buffKey)
+;                 }
+;             }
+;         }
+
+;         ; If we have stacked modifiers, we need to wait and see if they're also quick-released
+;         if (stackedModifiers.Length > 0) {
+;             ; Don't process yet - wait for the others to release
+;             this.ProcessQueue()
+;             return
+;         }
+
+;         ; No stacked modifiers waiting - this was a solo quick tap, send as tap
+;         keyData.action := "tap"
+;         this.ProcessQueue()
+;         return
+;     }
+
+;     if (keyData.comboTriggered) {
+;         keyData.action := "modifier_used"
+;         this.ProcessQueue()
+;         return
+;     }
+
+;     if (keyData.modifierTriggered) {
+;         keyData.action := "modifier_used"
+;         this.ProcessQueue()
+;         return
+;     }
+
+;     if (keyData.modifierActivated && !keyData.modifierTriggered) {
+;         this.ProcessQueue()
+;         return
+;     }
+
+;     ; Force tap if key was pressed within comboQuietPeriod of previous key
+;     if (keyData.inQuietPeriod && !keyData.modifierTriggered && !keyData.comboTriggered) {
+;         keyData.action := "tap"
+;         this.ProcessQueue()
+;         return
+;     }
+
+;     if (keyData.hasInterferingKeys || duration < this.holdThreshold) {
+;         keyData.action := "tap"
+;         this.ProcessQueue()
+;         return
+;     }
+
+;     if (duration > this.maxHoldTime) {
+;         if (this.userconfig.maxholdsupresseskeys) {
+;             keyData.action := "none"
+;         } else {
+;             keyData.action := "tap"
+;         }
+;         this.ProcessQueue()
+;         return
+;     }
+
+;     ; NEW: Force tap during typing bursts or contamination (suppresses hold callback)
+;     if (keyData.inQuietPeriod || keyData.hasInterferingKeys) {
+;         keyData.action := "tap"
+;         this.ProcessQueue()
+;         return
+;     }
+
+;     ; Existing hold check (now only triggers outside bursts)
+;     hotkeyId := key . "_hold"
+;     if (this.holdCallbacks.Has(hotkeyId)) {
+;         keyData.action := "hold"
+;     } else {
+;         keyData.action := "tap"
+;     }
+;     this.ProcessQueue()
+;     return
+; }
+
+; DOWN STAGE 3: Handle homerow modifier release
 if (keyData.isModifier) {
     ; Check for quick tap while OTHER modifiers are held or quick stack handling
     if (duration < this.holdThreshold) {
@@ -888,6 +1262,32 @@ if (keyData.isModifier) {
 
             if (buffData.isModifier && buffData.modifierActivated) {
                 otherModifiersHeld.Push(buffKey)
+            }
+        }
+
+        ; NEW: Check for unreleased non-partner modifiers past threshold (not yet activated)
+        if (otherModifiersHeld.Length == 0) {
+            for buffKey, buffData in this.keyBuffer {
+                if (buffKey == key || buffData.isReleased || !buffData.isModifier)
+                    continue
+                
+                ; Skip partner modifiers (same type)
+                if (this.modifierKeys[buffKey] == thisModType)
+                    continue
+                
+                elapsed := currentTime - buffData.downTime
+                if (elapsed >= this.holdThreshold && !buffData.modifierActivated) {
+                    ; Check if there's a registered combo - if yes, skip activation
+                    comboId := buffKey . "_" . key
+                    if (this.comboCallbacks.Has(comboId) || this.instantComboCallbacks.Has(comboId))
+                        continue
+                    
+                    ; Activate the non-partner modifier retroactively
+                    this.activeModifiers[buffKey] := true
+                    buffData.modifierActivated := true
+                    buffData.modifierTriggered := true
+                    otherModifiersHeld.Push(buffKey)
+                }
             }
         }
 
@@ -1056,7 +1456,8 @@ if (keyData.isModifier) {
     this.ProcessQueue()
     return
 }
-    ; STAGE 4: Check for retroactive modifier activation
+
+    ; DOWN STAGE 4: Check for retroactive modifier activation
     if (!keyData.comboTriggered && !keyData.modifierPressed) {
         ; First pass: activate ALL eligible modifiers
         modsToActivate := []
@@ -1163,7 +1564,7 @@ if (keyData.isModifier) {
         }
     }
 
-    ; STAGE 5: Fast path for simple taps
+    ; DOWN STAGE 5: Fast path for simple taps
     if (duration < this.holdThreshold && !keyData.hasInterferingKeys && !keyData.comboTriggered) {
         hotkeyId := key . "_hold"
         if (!this.holdCallbacks.Has(hotkeyId) && !this.comboPrimaries.Has(key) && !this.instantComboPrimaries.Has(key)) {
@@ -1182,7 +1583,7 @@ if (keyData.isModifier) {
         }
     }
 
-    ; STAGE 6: Queue for processing
+    ; DOWN STAGE 6: Queue for processing
     this.ProcessQueue()
 }
 
@@ -1473,36 +1874,62 @@ if (keyData.isModifier) {
         }
     }
 
+    ; static SameModifierThreshold(primaryKey, secondaryKey) {
+    ;     timerId := primaryKey . "_sameMod_" . secondaryKey
+    ;     if (this.activeTimers.Has(timerId)) {
+    ;         this.activeTimers.Delete(timerId)
+    ;     }
+
+    ;     if (!this.keyBuffer.Has(primaryKey) || this.keyBuffer[primaryKey].isReleased)
+    ;         return
+
+    ;     if (!this.keyBuffer.Has(secondaryKey) || this.keyBuffer[secondaryKey].isReleased)
+    ;         return
+
+    ;     this.activeModifiers[primaryKey] := true
+    ;     primaryData := this.keyBuffer[primaryKey]
+    ;     primaryData.modifierActivated := true
+    ;     primaryData.modifierTriggered := true
+    ;     primaryData.sameModTimerId := ""
+
+    ;     this.SendModifiedKey(secondaryKey)
+
+    ;     this.keyBuffer.Delete(secondaryKey)
+    ;     Loop this.keyOrder.Length {
+    ;         if (this.keyOrder[A_Index] == secondaryKey) {
+    ;             this.keyOrder.RemoveAt(A_Index)
+    ;             break
+    ;         }
+    ;     }
+
+    ;     this.ProcessQueue()
+    ; }
+
     static SameModifierThreshold(primaryKey, secondaryKey) {
-        timerId := primaryKey . "_sameMod_" . secondaryKey
-        if (this.activeTimers.Has(timerId)) {
-            this.activeTimers.Delete(timerId)
-        }
-
-        if (!this.keyBuffer.Has(primaryKey) || this.keyBuffer[primaryKey].isReleased)
-            return
-
-        if (!this.keyBuffer.Has(secondaryKey) || this.keyBuffer[secondaryKey].isReleased)
-            return
-
-        this.activeModifiers[primaryKey] := true
-        primaryData := this.keyBuffer[primaryKey]
-        primaryData.modifierActivated := true
-        primaryData.modifierTriggered := true
-        primaryData.sameModTimerId := ""
-
-        this.SendModifiedKey(secondaryKey)
-
-        this.keyBuffer.Delete(secondaryKey)
-        Loop this.keyOrder.Length {
-            if (this.keyOrder[A_Index] == secondaryKey) {
-                this.keyOrder.RemoveAt(A_Index)
-                break
-            }
-        }
-
-        this.ProcessQueue()
+    timerId := primaryKey . "_sameMod_" . secondaryKey
+    if (this.activeTimers.Has(timerId)) {
+        this.activeTimers.Delete(timerId)
     }
+    if (!this.keyBuffer.Has(primaryKey) || this.keyBuffer[primaryKey].isReleased)
+        return
+    if (!this.keyBuffer.Has(secondaryKey) || this.keyBuffer[secondaryKey].isReleased)
+        return
+    this.activeModifiers[primaryKey] := true
+    primaryData := this.keyBuffer[primaryKey]
+    primaryData.modifierActivated := true
+    primaryData.modifierTriggered := true
+    primaryData.hasInterferingKeys := false ; Clear contamination
+    primaryData.sameModTimerId := ""
+    this.activeModifiers[secondaryKey] := true ; Keep secondary as modifier
+    secondaryData := this.keyBuffer[secondaryKey]
+    secondaryData.isModifier := true ; Override non-modifier
+    secondaryData.modifierActivated := true
+    secondaryData.modifierTriggered := true
+    secondaryData.hasInterferingKeys := false ; Clear contamination
+    this.SendModifiedKey(secondaryKey)
+    ; Remove deletion of secondaryKey to keep it as modifier
+    this.ProcessQueue()
+}
 
     ; ============================================================================
     ; UTILITY METHODS
