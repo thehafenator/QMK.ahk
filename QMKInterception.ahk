@@ -3,7 +3,7 @@
 #Include lib\QMKVariables.ahk
 #Include lib\MCodeLoader.ahk
 #Include lib\MemoryModule.ahk
-#Include Example QMK Shortcuts.ahk
+
 
 ^!F1:: DllCall(QMK.Proc("QMK_ShowProfilingReport"))
 ^!F2:: DllCall(QMK.Proc("QMK_ToggleKernelInjection"))
