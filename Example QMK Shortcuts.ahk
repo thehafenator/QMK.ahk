@@ -1,6 +1,5 @@
-#Requires AutoHotkey v2.0
-#SingleInstance Force
-#Include QMKInterception.ahk
+; This file is a sample and is included in QMKInterception.ahk. Feel free to commet it out as would be helpful, create a separate config, etc.
+
 
 ; Feel free to comment these in/out or delete. Simply to have some ideas for you to try before making your own
 ; #Include Optional Dependencies/OnWebsite.ahk
