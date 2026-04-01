@@ -1,8 +1,8 @@
 #Requires AutoHotkey v2.0
 #SingleInstance Force
-#Include QMKVariables.ahk
-#Include MCodeLoader.ahk
-#Include MemoryModule.ahk
+#Include lib\QMKVariables.ahk
+#Include lib\MCodeLoader.ahk
+#Include lib\MemoryModule.ahk
 
 ^!F1:: DllCall(QMK.Proc("QMK_ShowProfilingReport"))
 ^!F2:: DllCall(QMK.Proc("QMK_ToggleKernelInjection"))
