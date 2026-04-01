@@ -2,6 +2,13 @@
 #SingleInstance Force
 #Include QMKInterception.ahk
 
+; Feel free to comment these in/out or delete. Simply to have some ideas for you to try before making your own
+; #Include OnWebsite.ahk
+; #Include Monitor Manager.ahk
+; #Include TabActivator.ahk
+; #Include Scroll.ahk
+; #Include UIA/UIA.ahk
+
 ; I prefer asdf to be Control shift win alt, similar to if my hands moved down to the left of the keyboard to keep muscle memory.
 QMK.SetupModifier("a", "Ctrl")
 QMK.SetupModifier("s", "Shift")
@@ -147,17 +154,17 @@ QMK.SetupInstantCombo("s", "'", (*) => SendEvent("{`"}"))
 ; QMK.SetupCombo(".", "l", (*) => Spotify.PlayPlaylist("Liked Songs"))     
 
 ; holds - single key down only - 'hjkl' - moves the window to left half, right half, maximize/fullscreen, unfullscreen/restore
-QMK.SetupHold("h", ["global"], (*) => mm.SnapLeft("A"))
-QMK.SetupHold("j", ["global"], (*) => mm.GestureDL())
-QMK.SetupHold("k", ["global"], (*) => mm.GestureUR())
-QMK.SetupHold("l", ["global"], (*) => mm.SnapRight("A"))
+; QMK.SetupHold("h", ["global"], (*) => mm.SnapLeft("A"))
+; QMK.SetupHold("j", ["global"], (*) => mm.GestureDL())
+; QMK.SetupHold("k", ["global"], (*) => mm.GestureUR())
+; QMK.SetupHold("l", ["global"], (*) => mm.SnapRight("A"))
 
 ; additional - matches my mouse gestures
-QMK.SetupHold("u", ["global"], (*) => mm.GestureUL())
-QMK.SetupHold("o", ["global"], (*) => mm.GestureUR())
-QMK.SetupHold("n", ["global"], (*) => mm.GestureDL())
-QMK.SetupHold("m", ["global"], (*) => mm.GestureDL())
-QMK.SetupHold(".", ["global"], (*) => mm.GestureDR())
+;QMK.SetupHold("u", ["global"], (*) => mm.GestureUL())
+; QMK.SetupHold("o", ["global"], (*) => mm.GestureUR())
+; QMK.SetupHold("n", ["global"], (*) => mm.GestureDL())
+; QMK.SetupHold("m", ["global"], (*) => mm.GestureDL())
+; QMK.SetupHold(".", ["global"], (*) => mm.GestureDR())
 
 ; ; additional keys that override global in certain contexts, for when the mm. gestures don't work as expected
 ; QMK.SetupHold("k", ["ahk_exe ONENOTE.EXE"], (*) => onenote.GestureUR())
