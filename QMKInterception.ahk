@@ -132,6 +132,7 @@ try {
             "Int", QMK.userconfig.repeatInitialDelay,
             "Int", QMK.userconfig.repeatInterval)
     }
+ this.RegisterAllKeys()
 }
     static Proc(funcName) {
         if QMK._procCache.Has(funcName)
