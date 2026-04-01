@@ -1854,7 +1854,22 @@ fn bufferKeyDown(keyName: [*:0]const u16) void {
                     for (heldVKs[0..heldCount]) |v| cancelKeyTimers(v);
                     for (heldVKs[0..heldCount]) |v| {
                         activeModRemove(v);
-                        if (kbGet(v)) |kd| kd.sf(FLAG_COMBO_TRIG | FLAG_MOD_ACT | FLAG_MOD_TRIG);
+                        if (kbGet(v)) |kd| {
+                            // FLAG_COMBO_TRIG + FLAG_MOD_TRIG: marks the key as consumed so
+                            // bufferKeyUp's comboTriggered() early-out fires and the key is
+                            // silently removed without emitting anything.
+                            // FLAG_MOD_ACT must be CLEAR: the external chord callback owns its
+                            // own output; there is no physical modifier key-down pending that
+                            // needs a matching key-up replayed.  If FLAG_MOD_ACT were left set,
+                            // HOMEROW MODIFIER RELEASE would fire a spurious VK_CONTROL/etc
+                            // key-up on every held key (the "a and d up leaking" bug).
+                            // actionType = .modifier_used: catches the modifier_used guard in
+                            // bufferKeyUp (line ~2379) as a second safety net so even if
+                            // FLAG_COMBO_TRIG were somehow cleared the key still exits cleanly.
+                            kd.sf(FLAG_COMBO_TRIG | FLAG_MOD_TRIG);
+                            kd.cf(FLAG_MOD_ACT);
+                            kd.actionType = .modifier_used;
+                        }
                     }
                     queueCallback(extChord.callbackId, nameRef, @ptrCast(&[_:0]u16{0}), 5);
                     return;
