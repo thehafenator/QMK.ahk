@@ -3,11 +3,12 @@
 #Include QMKInterception.ahk
 
 ; Feel free to comment these in/out or delete. Simply to have some ideas for you to try before making your own
-; #Include OnWebsite.ahk
-; #Include Monitor Manager.ahk
-; #Include TabActivator.ahk
-; #Include Scroll.ahk
-; #Include UIA/UIA.ahk
+; #Include Optional Dependencies/OnWebsite.ahk
+; #Include Optional Dependencies/Monitor Manager.ahk
+; #Include Optional Dependencies/TabActivator.ahk
+; #Include Optional Dependencies/scroll.ahk
+; #Include Optional Dependencies/mouse.ahk
+; #Include Optional Dependencies/UIA/UIA.ahk
 
 ; I prefer asdf to be Control shift win alt, similar to if my hands moved down to the left of the keyboard to keep muscle memory.
 QMK.SetupModifier("a", "Ctrl")
