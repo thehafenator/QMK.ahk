@@ -93,11 +93,11 @@ QMK.SetupInternalCombo("c", "/", "", ".")
 
 ; Move the mouse with hjkl and click while 'f' is down
 ; Note that SetupInternalCombo has an alternative "SetupCombo" that calls back to AHK for an AHK-specific Function
-QMK.SetupCombo("f", "i", (*) => Scroll.up())
-QMK.SetupCombo("f", "l", (*) => mouse.move("l"))
-QMK.SetupCombo("f", "j", (*) => mouse.move("j"))
-QMK.SetupCombo("f", "k", (*) => mouse.move("k"))
-QMK.SetupCombo("f", "h", (*) => mouse.move("h"))
+; QMK.SetupCombo("f", "i", (*) => Scroll.up())
+; QMK.SetupCombo("f", "l", (*) => mouse.move("l"))
+; QMK.SetupCombo("f", "j", (*) => mouse.move("j"))
+; QMK.SetupCombo("f", "k", (*) => mouse.move("k"))
+; QMK.SetupCombo("f", "h", (*) => mouse.move("h"))
 
 
 ; g is another 'layer' for moving in text edits like 'a', but bigger movements "Go" + HJKL)
