@@ -1,6 +1,6 @@
 # QMK.ahk Tutorial
 
-This tutorial is based on the project's current `ReadMe_Tutorial.ahk` reference file. The examples are intentionally small so you can copy individual patterns into your own shortcut file.
+This tutorial is based on the project's current `lib/ReadMe_Tutorial.ahk` reference file. The examples are intentionally small so you can copy individual patterns into your own shortcut file.
 
 Some callback names in the examples—such as `media`, `edge`, `mm`, `VDA`, or `globals`—come from the author's personal AutoHotkey setup. Treat them as placeholders for your own functions.
 
@@ -465,4 +465,4 @@ QMK.SuspendExempt(callback)
 QMKUserConfig.ShowGui()
 ```
 
-For a runnable-style collection of examples, see the repository's **`ReadMe_Tutorial.ahk`**.
+For a runnable-style collection of examples, see **`lib/ReadMe_Tutorial.ahk`**.
