@@ -377,7 +377,7 @@ Do not copy the entire active directory yet. First create the sanitized package 
 - Kept the remote-derived docs/Quick_Demo.ahk, the active tutorial, compiler/transpiler sources, and the runtime files required by the staged package.
 - The active development directory was not cleaned, renamed, or modified by this pass.
 
-The next concrete action is the final file-by-file staging review. No personal shortcut or hotstring source should enter that diff. The copied package is a private demo candidate, not a completed release.
+The file-by-file staging review is complete. No personal shortcut or hotstring source entered the committed diff. The package remains a private demo candidate, not a completed public release.
 
 ## Demo layout pass 2026-09-05
 
@@ -386,3 +386,24 @@ The next concrete action is the final file-by-file staging review. No personal s
 - Changed the demo includes to resolve the package entry point from ..\\QMKInterception.ahk and the dependency tree from docs/Example Dependencies.
 - Changed the demo's tutorial links and messages to open docs/TUTORIAL.md, avoiding the removed personal-example reference file.
 - Sanitized the two copied dependency examples that contained development-specific application names; they now use generic example-editor placeholders.
+
+## Final staging audit status 2026-09-05
+
+**Status:** Ready for user review and push; not pushed to GitHub.
+
+- Local checkpoint: commit `488099f` (`Prepare sanitized private release package`).
+- Branch state: `qmk-release-sync-2026-08-29` is one commit ahead of its tracked GitHub branch, with a clean working tree.
+- Manifest check: all required compiler, interception, MemoryModule, Zig, transpiler-source, tutorial, and demo paths exist in the release tree.
+- Demo layout check: `docs/Quick_Demo.ahk` resolves the package entry point and all seven dependency includes under `docs/Example Dependencies`.
+- Privacy check: no personal mapping files, personal paths, or personal shortcut/hotstring content are tracked. The remaining filename references are intentional exclusion rules in the transpiler and repository hygiene files.
+- Embedded payload check: the base64-embedded QMKCore payload was decoded in memory and contained the expected generic QMK exports, with no personal path, mapping filename, or development-identifier matches.
+- Backup check: the release tree has exactly one local ignored backup, `lib/QMKVariables.ahk.original.bak`; it is not tracked and is not required on another user’s computer.
+- Artifact check: no trainer executable, profiling/training DLL, PDB, PGO profile, LLVM IR, response file, cache, generated shortcut bundle, or transpiler executable is tracked. The compiler rebuilds the transpiler and PGO trainer from their checked-in Zig sources when those outputs are needed.
+- Zig syntax check: passed for `QMKCore.zig`, `build.zig`, `QMKCorePGOTrainer.zig`, `build_options_pgo.zig`, `build_options_runtime.zig`, `blank_user_shortcuts.zig`, and `zig_user_shortcut_transpiler/user_shortcut_transpiler.zig`.
+- AHK check limitation: the available checker copies scripts to a temporary directory, so it cannot resolve the package’s intentional relative includes; the compiler check timed out without a reported syntax error. No AHK runtime or demo execution was performed.
+
+Deliberate remaining caveats:
+
+1. The demo and native runtime were not executed, per the syntax-only instruction.
+2. The release keeps the embedded runtime payload already paired with the staged `QMKVariables.ahk`; rebuilding the native core is intentionally deferred until the user is ready to verify that runtime behavior.
+3. GitHub visibility and the remote branch were not changed. The next external action is a user-approved push of the local checkpoint, followed later by a pull request into `main`.
