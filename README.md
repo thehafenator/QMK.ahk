@@ -1,14 +1,10 @@
-# QMKInterception.ahk
-**Breaking Changes as of 9/5/2026**
-- This project began as a pure AutoHotkey implementation of QMK-like keyboard behavior. It has been updated for better speed and reliability. Please see the legacy branch, or see the tutorial for syntax changes.
+## QMKInterception.ahk
 
 **What is QMKInterception.ahk?**
 
 This project aims to let you build your own custom-shortcuts beyond what AutoHotkey alone is typically capable of. This allows firmware-style keyboard behavior in AutoHotkey: home-row modifiers, layers, combos, chords, tap/hold actions, hotkeys, hotstrings, and context-aware shortcuts. Your mappings stay easy to write in AHK, while timing-sensitive keyboard processing runs in a native Zig core.
 
 Projects such as QMK and ZMK provide powerful keyboard features at the firmware level, but normally require compatible hardware and firmware configuration.
-
-QMKInterception.ahk brings many of the same ideas to **any Windows keyboard** while keeping configuration in **AutoHotkey v2**.
 
 QMKInterception.ahk brings many of the same ideas to **any Windows keyboard** while keeping configuration in **AutoHotkey v2**.
 
@@ -297,7 +293,6 @@ This means:
 ---
 
 ## Project history
-
-QMK.ahk began as a pure AutoHotkey implementation of QMK-like keyboard behavior. As the project grew, the timing-sensitive runtime was moved into Zig while keeping the user-facing configuration and callbacks in AutoHotkey.
-
+**Breaking Changes as of 9/5/2026**
+- This project began as a pure AutoHotkey implementation of QMK-like keyboard behavior. As the project grew, the timing-sensitive runtime was moved into native Zig while keeping the user-facing configuration and callbacks in AutoHotkey. Please see the legacy branch if needed, and the tutorial for up-to date syntax.
 The current design focuses on a small AHK API, runtime-configured shortcuts, low-latency native processing, and compatibility with existing AutoHotkey automation.
