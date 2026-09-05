@@ -94,7 +94,6 @@ The mappings are defined in AutoHotkey. QMK.ahk passes them into the native runt
 1. Read the **[Installation Guide](docs/INSTALL.md)** for the first setup and backend choice.
 2. Use the **[Tutorial](docs/TUTORIAL.md)** for the full API and backend behavior.
 3. Use the **[GUI Compiler Guide](docs/COMPILER_GUI.md)** only if you need to rebuild the native core.
-4. Open **[Quick_Demo.ahk](Quick_Demo.ahk)** for a runnable sanitized example.
 
 ### Basic setup
 
