@@ -2,14 +2,15 @@
 
 **What is QMKInterception.ahk?**
 
-This project aims to let you build your own custom-shortcuts beyond what AutoHotkey alone is typically capable of. This allows firmware-style keyboard behavior in AutoHotkey: home-row modifiers, layers, combos, chords, tap/hold actions, hotkeys, hotstrings, and context-aware shortcuts. Your mappings stay easy to write in AHK, while timing-sensitive keyboard processing runs in a native Zig core.
+This project aims to let you build your own custom-shortcuts beyond what AutoHotkey alone is typically capable of. 
 
-Projects such as QMK and ZMK provide powerful keyboard features at the firmware level, but normally require compatible hardware and firmware configuration.
+This allows firmware-style keyboard behavior in AutoHotkey like **home-row modifiers, combos, chords, tap/hold actions, hotkeys, hotstrings**, and context-aware shortcuts. 
 
-QMKInterception.ahk brings many of the same ideas to **any Windows keyboard** while keeping configuration in **AutoHotkey v2**.
+Your mappings stay easy to write in AHK, while timing-sensitive keyboard processing runs in a native Zig core.
+
+Projects such as QMK and ZMK provide powerful keyboard features at the firmware level (and partial inspiration for this project), but normally require compatible hardware and firmware configuration. QMKInterception.ahk brings many of the same ideas to **any Windows keyboard** while keeping configuration in **AutoHotkey v2**. 
 
 For example, you can:
-
 - tap `A` normally, but hold it to use it as `Ctrl`
 - hold `C` and use the right side of the keyboard as a numpad
 - press `J` + `K` together for `Escape`
