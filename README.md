@@ -250,8 +250,7 @@ Install QMK.ahk, choose an input/output backend, verify the setup, troubleshoot 
 ### [Tutorial](docs/TUTORIAL.md)
 Learn the API progressively: modifiers, contexts, combos, timing, chords, taps/holds, hotstrings, hotkeys, settings, and advanced configuration.
 
-### `lib/ReadMe_Tutorial.ahk`
-A copy/pasteable AutoHotkey reference containing practical examples of the public API.
+The copy/pasteable examples are in the sanitized [Tutorial](docs/TUTORIAL.md) and [quick demo](docs/Quick_Demo.ahk). They use generic contexts and callbacks rather than a user's personal shortcut files.
 
 ---
 

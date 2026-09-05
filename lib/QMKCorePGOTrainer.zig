@@ -112,7 +112,12 @@ fn loadEngine(path: [*:0]const u8) Engine {
     };
     return .{
         .lib = lib,
-        .resetReplay = loadFn(*const fn () callconv(.c) void, lib, "QMK_ResetForReplayBench"),
+        // Training scenarios install their own small runtime fixtures.  Do
+        // not re-inject the full compiled user-shortcut preload before every
+        // scenario: that path can terminate the trainer during the hold
+        // smoke, leaving QMKCompiler waiting forever at 59% for its marker.
+        // The final DLL is still compiled with the selected shortcut module.
+        .resetReplay = loadFn(*const fn () callconv(.c) void, lib, "QMK_ResetForTest"),
         .resetProfiling = loadFn(*const fn () callconv(.c) void, lib, "QMK_ResetProfilingData"),
         .setSuppressOutput = loadFn(*const fn (i32) callconv(.c) void, lib, "QMK_SetReplaySuppressOutput"),
         .setUserConfig = loadFn(*const fn (i32, i32, i32, f64, f64, i32, i32, f64, f64, f64, i32, i32) callconv(.c) void, lib, "QMK_SetUserConfig"),

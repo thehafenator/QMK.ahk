@@ -10,7 +10,9 @@ A_HotkeyInterval := 100
 A_MaxHotkeysPerInterval := 200
 ProcessSetPriority("AboveNormal")
 #Include %A_LineFile%\..\lib\MemoryModule\MemoryModule.ahk
+; #Include %A_LineFile%\..\lib\QMKVariables.ahk
 #Include %A_LineFile%\..\lib\QMKVariables.ahk
+
 
 class QMKNativeLoader {
     static hModule := 0
@@ -28,6 +30,13 @@ class QMKNativeLoader {
     static pIpcBuf := 0
     static pWaitOnAddress := 0
     static callbacks := []
+    ; Full-native compiled callbacks are addressed by the reserved Zig slot
+    ; ID. They are not inserted into callbacks[] during startup.
+    static compiledCallbackMap := Map()
+    static COMPILED_CALLBACK_ID_BASE := -0x30000000
+    ; Temporary bridge diagnosis switch. Set false after the callback path is
+    ; confirmed; native Zig rows do not pass through this bridge.
+    static compiledBridgeDebugTooltips := false
     static comptimeCallbackCount := 0
     static _resolved := false
     static _ipcTimerFn := ""
@@ -132,6 +141,13 @@ class QMKNativeLoader {
             MsgBox("Failed to resolve one or more hot-path QMK exports.")
             ExitApp()
         }
+        if procFlags := QMK.ProcOptional("QMK_GetBuildFeatureFlags") {
+            flags := DllCall(procFlags, "UInt")
+            compiledCount := 0
+            if procCount := QMK.ProcOptional("QMK_GetCompiledAhkCallbackCount")
+                compiledCount := DllCall(procCount, "UInt")
+            QMK.BridgeDebugTooltip("DLL flags: 0x" Format("{:08X}", flags) "`ncompiled shortcuts: " ((flags & 0x80) ? "YES" : "NO") "`nAHK callback descriptors: " compiledCount)
+        }
         if !QMK._shutdownHookRegistered {
             OnExit(ObjBindMethod(QMK, "Shutdown"))
             QMK._shutdownHookRegistered := true
@@ -185,7 +201,10 @@ class QMKNativeLoader {
 
         if !QMK.hInterception {
             try {
-                QMK.hInterception := MemoryModule.LoadLibrary(QMK._B64ToBuffer(interception64))
+                interceptionPayload := A_PtrSize = 8 ? interception64 : interception32
+                if (interceptionPayload = "")
+                    return callbacks
+                QMK.hInterception := MemoryModule.LoadLibrary(QMK._B64ToBuffer(interceptionPayload))
             } catch as err {
                 QMK.hInterception := 0
                 QMK.DebugLog("interception load failed; using SendInput/AHK keyhook fallback: " err.Message)
@@ -259,6 +278,9 @@ class QMKNativeLoader {
                 "Double", QMK.userconfig.doubleTapThreshold,
                 "Int", QMK.userconfig.repeatInitialDelay,
                 "Int", QMK.userconfig.repeatInterval)
+
+            if procPasteMode := QMK.ProcOptional("QMK_SetPasteMode")
+                DllCall(procPasteMode, "Int", QMK.PasteModeCode(), "Int")
 
             if refreshInputLayer {
                 if backendCode != 3 && QMK.WaitForNativeInputBackend(backendCode)
@@ -488,14 +510,63 @@ class QMKNativeLoader {
         return idx
     }
 
+    static InstallCompiledCallbackMap(callbackMap) {
+        ; Keep one central callback registry.  Generated callback files may be
+        ; split per source, so installing a later file must merge rather than
+        ; discard maps installed by earlier files.
+        QMK.MergeCompiledCallbackMap(callbackMap)
+    }
+
+    static MergeCompiledCallbackMap(callbackMap) {
+        if (Type(callbackMap) != "Map")
+            throw TypeError("Compiled callback map must be a Map.")
+        added := 0
+        for callbackId, callback in callbackMap {
+            if QMK.compiledCallbackMap.Has(callbackId) {
+                existing := QMK.compiledCallbackMap[callbackId]
+                ; A callback slot is the global identity.  Per-source bridge
+                ; files may expose different wrapper Func objects for the same
+                ; slot, so reinstalling that reserved compiled ID is an
+                ; idempotent merge operation rather than a conflict.
+                if (callbackId <= QMK.COMPILED_CALLBACK_ID_BASE)
+                    continue
+                if (Type(existing) != Type(callback) || existing != callback)
+                    throw Error("Conflicting compiled callback binding for ID " callbackId ".")
+                continue
+            }
+            QMK.compiledCallbackMap[callbackId] := callback
+            added += 1
+        }
+        if QMK.compiledBridgeDebugTooltips
+            QMK.BridgeDebugTooltip("callback map merged: " added " new, " QMK.compiledCallbackMap.Count " total entries")
+    }
+
+    static BridgeDebugTooltip(message, duration := 2500) {
+        if !QMK.compiledBridgeDebugTooltips
+            return
+        ToolTip("QMK compiled bridge`n" message)
+        SetTimer(() => ToolTip(), -duration)
+    }
+
+    ; Generated compiled rows use stable zero-based callback slots.  The core
+    ; preloads those rows before this registration runs, so bind the slot to
+    ; the actual runtime callback ID after registration.
+    static BindCompiledCallback(slot, runtimeId) {
+        return DllCall(QMK.Proc("QMK_BindCompiledCallback"), "Int", slot, "Int", runtimeId, "Int")
+    }
+
     static MissingCallback(name) {
         captured := name
-        return (*) => ToolTip("QMKCore: no AHK function for '" captured "'")
+        return (*) => QMK.compiledBridgeDebugTooltips
+            ? ToolTip("QMKCore: no AHK function for '" captured "'")
+            : 0
     }
 
     static ReportCallbackFailure(label, detail := "") {
         message := "QMK callback dispatch failed: " label (detail != "" ? " - " detail : "")
         QMK.DebugLog(message)
+        if !QMK.compiledBridgeDebugTooltips
+            return
         ToolTip(message)
         SetTimer(() => ToolTip(), -2500)
     }
@@ -519,6 +590,7 @@ class QMKNativeLoader {
         QMK._ipcDraining := true
         try {
             ptrHead := QMK.pIpcBuf + QMK.OFF_HEAD
+            seenCompiledCallbacks := Map()
             loop {
                 head := NumGet(QMK.pIpcBuf, QMK.OFF_HEAD, "Int64")
                 tail := NumGet(QMK.pIpcBuf, QMK.OFF_TAIL, "Int64")
@@ -536,8 +608,21 @@ class QMKNativeLoader {
                 while (tail < head) {
                     base := QMK.pIpcBuf + QMK.OFF_SLOTS + ((tail & QMK.MASK) * QMK.SLOT_SIZE)
                     callbackIdx := NumGet(base, 16, "Int64")
+                    QMK.BridgeDebugTooltip("RAW IPC ID: " callbackIdx)
                     tail += 1
                     NumPut("Int64", tail, QMK.pIpcBuf, QMK.OFF_TAIL)
+                    if QMK.compiledCallbackMap.Has(callbackIdx) {
+                        if seenCompiledCallbacks.Has(callbackIdx) {
+                            ; A modal callback can let repeated key events
+                            ; accumulate in one drain. Coalesce only duplicate
+                            ; compiled IDs in this drain; a later drain is a
+                            ; separate physical activation.
+                            if ackProc := QMK.ProcOptional("QMK_AcknowledgeTapHoldCallback")
+                                DllCall(ackProc)
+                            continue
+                        }
+                        seenCompiledCallbacks[callbackIdx] := true
+                    }
                     QMK.DispatchIPC(callbackIdx)
                 }
 
@@ -562,6 +647,20 @@ class QMKNativeLoader {
             case -99:
                 QMK.EmergencyReset(false)
             default:
+                if QMK.compiledCallbackMap.Has(callbackIdx) {
+                    callback := QMK.compiledCallbackMap[callbackIdx]
+                    callbackName := (Type(callback) = "Func") ? callback.Name : Type(callback)
+                    QMK.BridgeDebugTooltip("received callback ID " callbackIdx "`n" callbackName)
+                    try {
+                        QMK.ScheduleCallback(callback)
+                    } catch as err {
+                        QMK.ReportCallbackFailure("compiled callbackIdx " callbackIdx, err.Message)
+                    } finally {
+                        if ackProc := QMK.ProcOptional("QMK_AcknowledgeTapHoldCallback")
+                            DllCall(ackProc)
+                    }
+                    return
+                }
                 ahkIdx := callbackIdx + 1
                 if (ahkIdx >= 1 && ahkIdx <= QMK.callbacks.Length) {
                     callback := QMK.callbacks[ahkIdx]
@@ -578,6 +677,7 @@ class QMKNativeLoader {
                             DllCall(ackProc)
                     }
                 } else {
+                    QMK.BridgeDebugTooltip("unmapped callback ID " callbackIdx)
                     QMK.ReportCallbackFailure("callbackIdx " callbackIdx, "out of range")
                 }
         }
@@ -684,6 +784,7 @@ class QMKSettings extends QMKNativeLoader {
         applyUserConfig: false,
         useInterception: true,
         sendMode: "auto",
+        pasteMode: "interception_paste",
         inputBackend: "auto",
         profilingEnabled: true,
         singleKeyHoldThreshold: 175.0,
@@ -730,6 +831,13 @@ class QMKSettings extends QMKNativeLoader {
             || this.userconfig.sendMode = "sendinput")
             this.userconfig.sendMode := this.userconfig.useInterception ? "auto" : "sendinput"
         this.userconfig.useInterception := this.userconfig.sendMode != "sendinput"
+        this.userconfig.pasteMode := StrLower(this.ReadIniText("pasteMode", this.userconfig.pasteMode))
+        if !(this.userconfig.pasteMode = "interception_paste"
+            || this.userconfig.pasteMode = "interception_send"
+            || this.userconfig.pasteMode = "sendinput_paste"
+            || this.userconfig.pasteMode = "sendinput_chars"
+            || this.userconfig.pasteMode = "sendevent")
+            this.userconfig.pasteMode := "interception_paste"
         this.userconfig.inputBackend := StrLower(this.ReadIniText("inputBackend", this.userconfig.inputBackend))
         if !(this.userconfig.inputBackend = "auto"
             || this.userconfig.inputBackend = "interception"
@@ -762,6 +870,7 @@ class QMKSettings extends QMKNativeLoader {
         IniWrite(this.userconfig.applyUserConfig ? "true" : "false", this.iniPath, "Settings", "applyUserConfig")
         IniWrite(this.userconfig.useInterception ? "true" : "false", this.iniPath, "Settings", "useInterception")
         IniWrite(this.userconfig.sendMode, this.iniPath, "Settings", "sendMode")
+        IniWrite(this.userconfig.pasteMode, this.iniPath, "Settings", "pasteMode")
         IniWrite(this.userconfig.inputBackend, this.iniPath, "Settings", "inputBackend")
         IniWrite(this.userconfig.profilingEnabled ? "true" : "false", this.iniPath, "Settings", "profilingEnabled")
         IniWrite(this.userconfig.maxThresholdSuppress ? "true" : "false", this.iniPath, "Settings", "maxThresholdSuppress")
@@ -818,6 +927,23 @@ class QMKSettings extends QMKNativeLoader {
         }
     }
 
+    static PasteModeCode() {
+        switch StrLower(this.userconfig.pasteMode) {
+            case "interception_paste":
+                return 0
+            case "interception_send":
+                return 1
+            case "sendinput_paste":
+                return 2
+            case "sendinput_chars":
+                return 3
+            case "sendevent":
+                return 4
+            default:
+                return 0
+        }
+    }
+
     static ShouldLoadInterceptionDll() {
         backend := StrLower(this.userconfig.inputBackend)
         sendMode := StrLower(this.userconfig.sendMode)
@@ -826,86 +952,6 @@ class QMKSettings extends QMKNativeLoader {
 
     static GetCoreDllPayload() {
         return QMKCore
-    }
-}
-
-class QMKGui extends QMKSettings {
-    static PushContextMenuState(hasContextMenu, force := false) {
-        newState := hasContextMenu ? 1 : 0
-        if (!force && QMK._contextMenuLastState == newState)
-            return
-        proc := QMK.ProcOptional("QMK_SetContextMenuState")
-        if !proc
-            return
-        QMK._contextMenuLastState := newState
-        DllCall(proc, "Int", newState)
-        if !hasContextMenu
-            QMK.ClearContextMenuDigitAccessMap()
-    }
-
-    static SyncContextMenuState(force := false) {
-        if proc := QMK.ProcOptional("QMK_RefreshContextMenuState")
-            QMK._contextMenuLastState := DllCall(proc, "Int")
-    }
-
-    ; The digit access map stays empty on purpose. Numbered menu items are now
-    ; resolved by AutoHotkey hotkeys that are armed only while a menu is up
-    ; (ShowMenuWithDigits in Macropad Functions.ahk), so QMKCore must let 0-9
-    ; through to the OS. RefreshContextMenuDigitAccessMap and the
-    ; QMK_SetContextMenuDigitAccessMap export are kept as a fallback for menus
-    ; that are ever built dynamically; nothing calls the refresh automatically.
-    static PreArmContextMenu() {
-        QMK.PushContextMenuState(true, true)
-    }
-
-    static ClearContextMenuDigitAccessMap() {
-        proc := QMK.ProcOptional("QMK_SetContextMenuDigitAccessMap")
-        if !proc
-            return
-        buf := Buffer(10 * 4, 0)
-        DllCall(proc, "Ptr", buf.Ptr, "UInt", 10)
-    }
-
-    static RefreshContextMenuDigitAccessMap() {
-        proc := QMK.ProcOptional("QMK_SetContextMenuDigitAccessMap")
-        if !proc
-            return false
-        buf := Buffer(10 * 4, 0)
-        try {
-            hwnd := WinExist("ahk_class #32768 ahk_exe AutoHotkey64_UIA.exe") || WinExist("ahk_class #32768 ahk_exe AutoHotkey64.exe") || WinExist("ahk_class #32768")
-            if hwnd {
-                menuElement := UIA.ElementFromHandle(hwnd)
-                menuItems := menuElement.FindElements({ LocalizedType: "menu item" })
-                for item in menuItems {
-                    itemName := item.Name
-                    if RegExMatch(itemName, "^([0-9])\. ", &digitMatch) {
-                        accessKey := QMK.MenuAccessKeyFromItem(item)
-                        if accessKey != "" {
-                            vk := QMK.GetVK(accessKey)
-                            if vk != 0
-                                NumPut("Int", vk, buf, Integer(digitMatch[1]) * 4)
-                        }
-                    }
-                }
-            }
-        }
-        DllCall(proc, "Ptr", buf.Ptr, "UInt", 10)
-        return true
-    }
-
-    static MenuAccessKeyFromItem(item) {
-        accessKey := ""
-        try accessKey := Trim(item.AccessKey)
-        if accessKey != "" {
-            accessKey := RegExReplace(accessKey, "i)^(Alt|Ctrl|Shift|Win)\+", "")
-            if StrLen(accessKey) = 1
-                return StrLower(accessKey)
-        }
-        itemName := ""
-        try itemName := item.Name
-        if RegExMatch(itemName, "&([^&\s])", &m)
-            return StrLower(m[1])
-        return ""
     }
 }
 
@@ -1158,7 +1204,8 @@ class QMKUserConfig {
         }
         suffix := arg = "" ? "" : " " . arg
         this.SetStatus("Opening QMK PGO compiler" . (arg = "" ? "." : " command: " arg))
-        Run('"' . A_AhkPath . '" "' . script . '"' . suffix, productionDir)
+        Run('"' . A_AhkPath . '" "' . script . '"' . suffix, productionDir, , &pid)
+        return pid
     }
 
     static PopulateControlsFromCurrent() {
@@ -1452,7 +1499,10 @@ class QMKUserConfig {
             , rangeText: "auto / interception / llhook / ahk_hotkeys", description: "Chooses how physical keys enter QMK." }, { key: "sendMode", group: "Input", type: "enum", label: "SendMode", default: "auto"
                 , options: [{ value: "auto", label: "Auto" }, { value: "interception", label: "Interception driver sends" }, { value: "sendinput", label: "SendInput only" }
                 ]
-                , rangeText: "auto / interception / sendinput", description: "Chooses how QMKCore.dll sends synthetic keys back to Windows; SendInput only is still routed through the DLL." }, { key: "applyUserConfig", group: "General", type: "bool", label: "Apply User Config", default: true
+            , rangeText: "auto / interception / sendinput", description: "Chooses how QMKCore.dll sends synthetic keys back to Windows; SendInput only is still routed through the DLL." }, { key: "pasteMode", group: "Input", type: "enum", label: "Paste Mode", default: "interception_paste"
+                , options: [{ value: "interception_paste", label: "Interception Paste" }, { value: "interception_send", label: "Interception Send" }, { value: "sendinput_paste", label: "SendInput Paste" }, { value: "sendinput_chars", label: "SendInput Characters" }, { value: "sendevent", label: "SendEvent via Zig DLL" }
+                ]
+                , rangeText: "interception_paste / interception_send / sendinput_paste / sendinput_chars / sendevent", description: "Chooses the global text-paste strategy. All modes are implemented by the QMK Zig DLL." }, { key: "applyUserConfig", group: "General", type: "bool", label: "Apply User Config", default: true
                     , rangeText: "true / false", description: "When off, values can still be saved but are not pushed into the running QMK core." }, { key: "profilingEnabled", group: "General", type: "bool", label: "Profiling Enabled", default: true
                     , rangeText: "true / false", description: "Turns core profiling on or off for runtime diagnostics." }, { key: "maxThresholdSuppress", group: "General", type: "bool", label: "Suppress Over-Max Holds", default: true
                         , rangeText: "true / false", description: "If enabled, a solo key held past Max Hold Threshold will not fire its hold action. Combos and chords using that held key can still fire." }, { key: "singleKeyHoldThreshold", group: "Timing", type: "float", label: "Single Key Hold Threshold", default: 175.0
@@ -1491,7 +1541,7 @@ class QMKSendKeyDirectDescriptor {
     }
 }
 
-class QMKUserAPIs extends QMKGui {
+class QMKUserAPIs extends QMKSettings {
     ; =======================================================================
     ; USER API
     ; ========================================================================
@@ -1502,8 +1552,23 @@ class QMKUserAPIs extends QMKGui {
         return value is Array
     }
     static ContextText(contexts) {
-        if !QMK.IsArrayLike(contexts)
-            return String(contexts)
+        if !QMK.IsArrayLike(contexts) {
+            if IsObject(contexts)
+                return String(contexts)
+            ; Scalar context strings use commas as OR separators in the AHK
+            ; predicate path. Encode the same alternatives with U+001F for
+            ; QMKCore's native runtime stores; tokens inside one item remain
+            ; together, so `ahk_class ... ahk_exe ...` keeps AND semantics.
+            sep := Chr(0x1F)
+            text := ""
+            for raw in StrSplit(String(contexts), ",") {
+                ctx := Trim(raw)
+                if (ctx = "")
+                    continue
+                text .= (text = "" ? "" : sep) . ctx
+            }
+            return text = "" ? "global" : text
+        }
         if (contexts.Length == 0)
             throw Error("Context array cannot be empty")
         sep := Chr(0x1F)
@@ -1953,7 +2018,7 @@ class QMKUserAPIs extends QMKGui {
         if (A_ThisHotkey = "" && !QMK._insideCallbackDispatch)
             return QMKSendKeyDirectDescriptor(QMK.SendKeyDirectSpecText(key, modPrefix))
         if (modPrefix = "" && InStr(String(key), "{"))
-            return QMK.SendDirect(key)
+            return QMK._SendDirect(key)
         return DllCall(QMK.Proc("QMK_SendKeyDirectText"), "Str", String(key), "Str", String(modPrefix), "Int")
     }
     static SendKeyDirectSpecText(key, modPrefix := "") {
@@ -1962,9 +2027,10 @@ class QMKUserAPIs extends QMKGui {
             keyText := "{" keyText "}"
         return String(modPrefix) keyText
     }
-    static SendDirect(sendSpec) {
+    ; Internal compatibility path. Prefer SendKeyDirect() in user code.
+    static _SendDirect(sendSpec) {
         if !DllCall(QMK.Proc("QMK_SendDirectEntry"), "Str", String(sendSpec), "Int")
-            throw Error("QMK.SendDirect supports one known Send-style key", , sendSpec)
+            throw Error("QMK.SendKeyDirect supports one known Send-style key", , sendSpec)
         return true
     }
     static WriteAsciiBytes(buf, offset, text) {
@@ -1988,10 +2054,74 @@ class QMKUserAPIs extends QMKGui {
         } else {
             if !QMK.IsArrayLike(entry)
                 return false
-            for value in entry
-                cells.Push(QMK.HotkeyCell(value))
+            if (entry.Length < 2 || entry.Length > 4)
+                return false
+            cells.Push(QMK.HotkeyCell(entry[1]))
+            cells.Push(QMK.HotkeyCell(entry[2]))
+            ; The runtime shorthand [key, modifier] means a global modifier
+            ; row.  Preserve that meaning in the typed-cell ABI instead of
+            ; sending only two cells and letting the native parser see no
+            ; context rows at all.
+            cells.Push(QMK.HotkeyCell(entry.Length >= 3 ? entry[3] : "global"))
+            if (entry.Length >= 4)
+                cells.Push(QMK.HotkeyCell(entry[4]))
         }
-        return cells.Length >= 2 ? cells : false
+        return cells.Length >= 3 ? cells : false
+    }
+    static SetupPassthrough(key, context := "global", suspendExempt := false) {
+        return QMK.SetupPassthroughs([[key, context, suspendExempt]])
+    }
+    static SetupPassthroughs(entries) {
+        QMK.BeginSetup()
+        try {
+            entries := QMK.NormalizeSetupRows(entries)
+            proc := QMK.Proc("QMK_SetupPassthroughEntries")
+            rows := []
+            totalTextChars := 0
+            for rowIndex, entry in entries {
+                if IsObject(entry) && !QMK.IsArrayLike(entry) {
+                    if !entry.HasOwnProp("key")
+                        QMK.ThrowSetupRowError("SetupPassthroughs", rowIndex, "expected key", entry)
+                    key := String(entry.key)
+                    context := QMK.ContextText(entry.HasOwnProp("context") ? entry.context : entry.HasOwnProp("contexts") ? entry.contexts : "global")
+                    exempt := entry.HasOwnProp("suspendExempt") ? !!entry.suspendExempt : false
+                } else {
+                    if !QMK.IsArrayLike(entry) || entry.Length < 1
+                        QMK.ThrowSetupRowError("SetupPassthroughs", rowIndex, "expected key", entry)
+                    key := String(entry[1])
+                    context := entry.Length >= 2 ? QMK.ContextText(entry[2]) : "global"
+                    exempt := entry.Length >= 3 ? !!entry[3] : false
+                }
+                rows.Push({key:key, context:context, exempt:exempt})
+                totalTextChars += StrLen(key) + StrLen(context)
+            }
+            recordSize := 24
+            buf := Buffer(Max(1, rows.Length * recordSize), 0)
+            textBuf := Buffer(Max(2, (totalTextChars + 1) * 2), 0)
+            textOffset := 0
+            for i, row in rows {
+                off := (i - 1) * recordSize
+                keyLen := StrLen(row.key)
+                contextLen := StrLen(row.context)
+                NumPut("UInt", textOffset, buf, off)
+                NumPut("UShort", keyLen, buf, off + 4)
+                if keyLen > 0
+                    StrPut(row.key, textBuf.Ptr + textOffset * 2, keyLen + 1, "UTF-16")
+                textOffset += keyLen
+                NumPut("UInt", textOffset, buf, off + 8)
+                NumPut("UShort", contextLen, buf, off + 12)
+                NumPut("UChar", row.exempt ? 1 : 0, buf, off + 14)
+                if contextLen > 0
+                    StrPut(row.context, textBuf.Ptr + textOffset * 2, contextLen + 1, "UTF-16")
+                textOffset += contextLen
+            }
+            loaded := DllCall(proc, "Ptr", buf.Ptr, "UInt", rows.Length, "Ptr", textBuf.Ptr, "UInt", textOffset, "Int")
+            if (loaded != rows.Length)
+                QMK.ThrowSetupInstallError("SetupPassthroughs", loaded, rows.Length, entries[loaded + 1])
+            return true
+        } finally {
+            QMK.EndSetup()
+        }
     }
     static SetupModifiers(entries) {
         QMK.BeginSetup()
@@ -2307,11 +2437,31 @@ class QMKUserAPIs extends QMKGui {
         return QMK.SetupHolds([[key, context, callback, suspendExempt]])
     }
     static SetupHolds(entries) {
+        entries := QMK.NormalizeHoldEntries(entries)
         if QMK.SetupContextActionRows(entries, 0)
             return true
         ; V1.11 correctness rule: holds must be installed into Zig with their
         ; context rows. Do not silently fall back to AHK-side context lookup.
         return false
+    }
+    static NormalizeHoldEntries(entries) {
+        normalized := []
+        for rowIndex, entry in QMK.NormalizeSetupRows(entries) {
+            if IsObject(entry) && !QMK.IsArrayLike(entry) {
+                if entry.HasOwnProp("context") && QMK.IsArrayLike(entry.context)
+                    QMK.ThrowSetupRowError("SetupHolds", rowIndex, "hold context must be a string, not an array", entry)
+                if entry.HasOwnProp("contexts") && QMK.IsArrayLike(entry.contexts)
+                    QMK.ThrowSetupRowError("SetupHolds", rowIndex, "hold context must be a string, not an array", entry)
+                normalized.Push(entry)
+                continue
+            }
+            if !QMK.IsArrayLike(entry)
+                QMK.ThrowSetupRowError("SetupHolds", rowIndex, "invalid hold row", entry)
+            if (entry.Length >= 3 && QMK.IsArrayLike(entry[2]))
+                QMK.ThrowSetupRowError("SetupHolds", rowIndex, "hold context must be a string, not an array", entry)
+            normalized.Push(entry)
+        }
+        return normalized
     }
     static SetupDoubleTap(key, context := "global", callback := "", suspendExempt := false) {
         if QMK.IsCallable(context)
@@ -2863,12 +3013,15 @@ class QMKTextAndHotkeyAPIs extends QMKUserAPIs {
     static CallbackIsSuspendExempt(callback) {
         return IsObject(callback) && QMK.suspendExemptCallbackPtrs.Has(ObjPtr(callback))
     }
-    static PasteTextWithDll(text) {
+    static InterceptionPaste(text) {
         ok := DllCall(QMK.pPasteTextWithDll, "Str", String(text), "Int")
         if (!ok)
             throw Error("QMK_Paste failed")
         return ok
     }
+
+    ; Compatibility alias. New user code should use InterceptionPaste().
+    static PasteTextWithDll(text) => QMK.InterceptionPaste(text)
 
     static RuntimeCallbackId(callback) {
         if !QMK.IsCallable(callback)
@@ -2884,193 +3037,6 @@ class QMKTextAndHotkeyAPIs extends QMKUserAPIs {
     static TapDescriptorHasHold(value) {
         return QMK.IsTapDescriptor(value) && !(Type(value.holdCallback) = "String" && value.holdCallback = "")
     }
-    static TapHoldKeyFromHotkeySpec(spec) {
-        text := Trim(String(spec))
-        text := StrReplace(StrReplace(StrReplace(text, "~", ""), "$", ""), "*", "")
-        text := StrReplace(text, " up", "")
-        if (InStr(text, "&") || InStr(text, " "))
-            return ""
-        if RegExMatch(text, "[#!^+]")
-            return ""
-        return text
-    }
-    static TapDescriptorTapCallback(descriptor) {
-        action := descriptor.action
-        return (*) => QMK.Tap(action)
-    }
-    ; Preferred order: key, context, thresholdMs, tapCallback, holdCallback,
-    ; cleanupCallback, suspendExempt.
-    static SetupTapHold(key, context := "global", thresholdMs := 200, tapCallback := "", holdCallback := "", cleanupCallback := "", suspendExempt := false) {
-        if QMK.IsCallable(context) {
-            tapFn := context
-            holdFn := thresholdMs
-            threshold := IsNumber(tapCallback) ? tapCallback : 200
-            cleanupFn := holdCallback
-            contextValue := (Type(cleanupCallback) = "String" && cleanupCallback = "") ? "global" : cleanupCallback
-            return QMK.SetupTapHolds([[key, contextValue, threshold, tapFn, holdFn, cleanupFn, suspendExempt]])
-        }
-        return QMK.SetupTapHolds([[key, context, thresholdMs, tapCallback, holdCallback, cleanupCallback, suspendExempt]])
-    }
-    static TapHoldCellsFromRow(entry) {
-        if IsObject(entry) && entry.HasOwnProp("key") {
-            tapCallback := entry.HasOwnProp("tapCallback") ? entry.tapCallback : entry.HasOwnProp("tap") ? entry.tap : ""
-            holdCallback := entry.HasOwnProp("holdCallback") ? entry.holdCallback : entry.HasOwnProp("hold") ? entry.hold : ""
-            cleanupCallback := entry.HasOwnProp("cleanupCallback") ? entry.cleanupCallback : entry.HasOwnProp("cleanup") ? entry.cleanup : ""
-            if ((IsObject(tapCallback) && !QMK.IsCallable(tapCallback) && !QMK.IsTapDescriptor(tapCallback))
-                || (IsObject(holdCallback) && !QMK.IsCallable(holdCallback))
-                || (IsObject(cleanupCallback) && !QMK.IsCallable(cleanupCallback)))
-                return false
-            cells := []
-            cells.Push(QMK.HotkeyCell(entry.key))
-            cells.Push(QMK.HotkeyCell(entry.HasOwnProp("context") ? entry.context : entry.HasOwnProp("contexts") ? entry.contexts : "global"))
-            cells.Push(QMK.HotkeyCell(entry.HasOwnProp("thresholdMs") ? entry.thresholdMs : entry.HasOwnProp("threshold") ? entry.threshold : 200))
-            cells.Push(QMK.HotkeyCell(tapCallback))
-            cells.Push(QMK.HotkeyCell(holdCallback))
-            cells.Push(QMK.HotkeyCell(cleanupCallback))
-            cells.Push(QMK.HotkeyCell(entry.HasOwnProp("suspendExempt") ? entry.suspendExempt : false))
-            return cells
-        }
-        if !QMK.IsArrayLike(entry)
-            return false
-        if ((entry.Length >= 2 && IsObject(entry[2]) && !QMK.IsCallable(entry[2]) && !QMK.IsArrayLike(entry[2]))
-            || (entry.Length >= 3 && IsObject(entry[3]) && !QMK.IsCallable(entry[3]))
-            || (entry.Length >= 4 && IsObject(entry[4]) && !QMK.IsCallable(entry[4]))
-            || (entry.Length >= 5 && IsObject(entry[5]) && !QMK.IsCallable(entry[5]))
-            || (entry.Length >= 6 && IsObject(entry[6]) && !QMK.IsCallable(entry[6]) && !QMK.IsArrayLike(entry[6])))
-            return false
-        cells := []
-        for value in entry
-            cells.Push(QMK.HotkeyCell(value))
-        return cells
-    }
-    static SetupTapHolds(entries) {
-        QMK.BeginSetup()
-        try {
-            entries := QMK.NormalizeSetupRows(entries)
-            proc := QMK.ProcOptional("QMK_SetupTapHoldCellEntries")
-            if !proc
-                return QMK.SetupTapHoldsCompat(entries)
-            rows := []
-            totalTextChars := 0
-            for rowIndex, entry in entries {
-                cells := QMK.TapHoldCellsFromRow(entry)
-                if !cells
-                    QMK.ThrowSetupRowError("SetupTapHolds", rowIndex, "invalid tap-hold row", entry)
-                for cell in cells {
-                    if (cell.tag = 1 || cell.tag = 4)
-                        totalTextChars += StrLen(cell.text) + 1
-                }
-                rows.Push({ cells: cells })
-            }
-            recordSize := 116
-            recordBuf := Buffer(Max(1, rows.Length * recordSize), 0)
-            textBuf := Buffer(Max(2, (totalTextChars + 1) * 2), 0)
-            textOffset := 0
-            for i, row in rows {
-                off := (i - 1) * recordSize
-                NumPut("UChar", row.cells.Length, recordBuf, off)
-                for cellIndex, cell in row.cells {
-                    cellOff := off + 4 + ((cellIndex - 1) * 16)
-                    textLen := (cell.tag = 1 || cell.tag = 4) ? StrLen(cell.text) : 0
-                    NumPut("UChar", cell.tag, recordBuf, cellOff)
-                    NumPut("UChar", QMK.HotkeyCellFlags(cell), recordBuf, cellOff + 1)
-                    NumPut("UInt", textOffset, recordBuf, cellOff + 4)
-                    NumPut("UShort", textLen, recordBuf, cellOff + 8)
-                    NumPut("Int", cell.callbackId, recordBuf, cellOff + 12)
-                    if (textLen > 0)
-                        StrPut(cell.text, textBuf.Ptr + textOffset * 2, textLen + 1, "UTF-16")
-                    if (cell.tag = 1 || cell.tag = 4)
-                        textOffset += textLen + 1
-                }
-            }
-            loaded := DllCall(proc, "Ptr", recordBuf.Ptr, "UInt", rows.Length, "Ptr", textBuf.Ptr, "UInt", textOffset, "Int")
-            if (loaded != rows.Length)
-                QMK.ThrowSetupInstallError("SetupTapHolds", loaded, rows.Length, entries[loaded + 1])
-            return true
-        } finally {
-            QMK.EndSetup()
-        }
-    }
-    static SetupTapHoldsCompat(entries) {
-        entries := QMK.NormalizeSetupRows(entries)
-        proc := QMK.Proc("QMK_SetupTapHoldEntries")
-        rows := []
-        totalTextChars := 0
-        for rowIndex, entry in entries {
-            if IsObject(entry) && entry.HasOwnProp("key") {
-                key := String(entry.key)
-                contexts := entry.HasOwnProp("context") ? entry.context : entry.HasOwnProp("contexts") ? entry.contexts : "global"
-                thresholdMs := entry.HasOwnProp("thresholdMs") ? entry.thresholdMs : entry.HasOwnProp("threshold") ? entry.threshold : 200
-                tapCallback := entry.HasOwnProp("tapCallback") ? entry.tapCallback : entry.HasOwnProp("tap") ? entry.tap : ""
-                holdCallback := entry.HasOwnProp("holdCallback") ? entry.holdCallback : entry.HasOwnProp("hold") ? entry.hold : ""
-                cleanupCallback := entry.HasOwnProp("cleanupCallback") ? entry.cleanupCallback : entry.HasOwnProp("cleanup") ? entry.cleanup : ""
-                suspendExempt := entry.HasOwnProp("suspendExempt") ? !!entry.suspendExempt : false
-            } else if QMK.IsArrayLike(entry) {
-                key := String(entry[1])
-                if (entry.Length >= 3 && QMK.IsCallable(entry[2])) {
-                    contexts := entry.Length >= 6 ? entry[6] : "global"
-                    thresholdMs := entry.Length >= 4 && IsNumber(entry[4]) ? entry[4] : 200
-                    tapCallback := entry[2]
-                    holdCallback := entry[3]
-                    cleanupCallback := entry.Length >= 5 ? entry[5] : ""
-                    suspendExempt := entry.Length >= 7 ? !!entry[7] : false
-                } else {
-                    contexts := entry.Length >= 2 ? entry[2] : "global"
-                    thresholdMs := entry.Length >= 3 ? entry[3] : 200
-                    tapCallback := entry.Length >= 4 ? entry[4] : ""
-                    holdCallback := entry.Length >= 5 ? entry[5] : ""
-                    cleanupCallback := entry.Length >= 6 ? entry[6] : ""
-                    suspendExempt := entry.Length >= 7 ? !!entry[7] : false
-                }
-            } else
-                QMK.ThrowSetupRowError("SetupTapHolds", rowIndex, "expected tap-hold row array or object", entry)
-            if ((IsObject(tapCallback) && !QMK.IsCallable(tapCallback) && !QMK.IsTapDescriptor(tapCallback))
-                || (IsObject(holdCallback) && !QMK.IsCallable(holdCallback))
-                || (IsObject(cleanupCallback) && !QMK.IsCallable(cleanupCallback)))
-                QMK.ThrowSetupRowError("SetupTapHolds", rowIndex, "tap/hold/cleanup callback is invalid", entry)
-            if QMK.IsTapDescriptor(tapCallback)
-                tapCallback := QMK.TapDescriptorTapCallback(tapCallback)
-            tapId := QMK.RuntimeCallbackId(tapCallback)
-            holdId := QMK.RuntimeCallbackId(holdCallback)
-            cleanupId := QMK.RuntimeCallbackId(cleanupCallback)
-            suspendExempt := suspendExempt || QMK.CallbackIsSuspendExempt(tapCallback)
-                || QMK.CallbackIsSuspendExempt(holdCallback)
-                || QMK.CallbackIsSuspendExempt(cleanupCallback)
-            if (tapId < 0 && holdId < 0)
-                QMK.ThrowSetupRowError("SetupTapHolds", rowIndex, "expected tap or hold callback", entry)
-            contextText := QMK.ContextText(contexts)
-            rows.Push({ key: key, thresholdMs: Round(thresholdMs), tapId: tapId, holdId: holdId, cleanupId: cleanupId, context: contextText, suspendExempt: suspendExempt })
-            totalTextChars += StrLen(key) + StrLen(contextText)
-        }
-        recordSize := 40
-        buf := Buffer(rows.Length * recordSize, 0)
-        textBuf := Buffer(Max(2, (totalTextChars + 1) * 2), 0)
-        textOffset := 0
-        for i, row in rows {
-            off := (i - 1) * recordSize
-            keyLen := StrLen(row.key)
-            contextLen := StrLen(row.context)
-            NumPut("UInt", textOffset, buf, off)
-            NumPut("UShort", keyLen, buf, off + 4)
-            if keyLen > 0
-                StrPut(row.key, textBuf.Ptr + textOffset * 2, keyLen + 1, "UTF-16")
-            textOffset += keyLen
-            NumPut("Int", row.tapId, buf, off + 8)
-            NumPut("Int", row.holdId, buf, off + 12)
-            NumPut("Int", row.cleanupId, buf, off + 16)
-            NumPut("Int", row.thresholdMs, buf, off + 20)
-            NumPut("UChar", row.suspendExempt ? 1 : 0, buf, off + 24)
-            NumPut("UInt", textOffset, buf, off + 28)
-            NumPut("UShort", contextLen, buf, off + 32)
-            if contextLen > 0
-                StrPut(row.context, textBuf.Ptr + textOffset * 2, contextLen + 1, "UTF-16")
-            textOffset += contextLen
-        }
-        loaded := DllCall(proc, "Ptr", buf.Ptr, "UInt", rows.Length, "Ptr", textBuf.Ptr, "UInt", textOffset, "Int")
-        if (loaded != rows.Length)
-            QMK.ThrowSetupInstallError("SetupTapHolds", loaded, rows.Length, entries[loaded + 1])
-        return true
-    }
     static SetupHotstring(triggerSpec, context := "global", action := "", suspendExempt := false) {
         if QMK.IsCallable(context) {
             if (Type(action) = "String" && action = "")
@@ -3082,33 +3048,6 @@ class QMKTextAndHotkeyAPIs extends QMKUserAPIs {
         if (!QMK.IsCallable(action) && Type(action) != "String")
             return QMK.SetupHotstrings([[triggerSpec, context, action]])
         return QMK.SetupHotstrings([[triggerSpec, context, action, suspendExempt]])
-    }
-    static Hotstring(name, replacement?, onOff?) {
-        if (StrLower(name) == "endchars") {
-            oldValue := "-()[]{}:;'" . Chr(34) . "/\,.?!`n `t"
-            if IsSet(replacement) {
-                if proc := QMK.ProcOptional("QMK_SetHotstringEndChars")
-                    DllCall(proc, "Str", replacement, "Int")
-            }
-            return oldValue
-        }
-        if (StrLower(name) == "mousereset") {
-            if IsSet(replacement) {
-                if proc := QMK.ProcOptional("QMK_SetHotstringMouseReset")
-                    DllCall(proc, "Int", !!replacement)
-            }
-            return true
-        }
-        if (StrLower(name) == "reset") {
-            if proc := QMK.ProcOptional("QMK_ResetHotstringBuffer")
-                DllCall(proc)
-            return
-        }
-        if IsSet(replacement)
-            return QMK.SetupHotstring(name, "global", replacement)
-        if IsSet(onOff)
-            return DllCall(QMK.Proc("QMK_SetRuntimeHotstringEnabledToggleEntry"), "Str", String(name), "Str", String(onOff), "Int")
-        return -1
     }
     static HotstringCellsFromRow(entry) {
         cells := []
@@ -3321,13 +3260,13 @@ class QMKTextAndHotkeyAPIs extends QMKUserAPIs {
         action := hasCallback ? callback : contextsOrCallback
         if QMK.IsSendKeyDirectDescriptor(action) {
             nativeText := action.text
-            action := ((text) => (*) => QMK.SendDirect(text))(nativeText)
+            action := ((text) => (*) => QMK._SendDirect(text))(nativeText)
         }
         if QMK.IsTapDescriptor(action)
             action := ((tapAction) => (*) => QMK.Tap(tapAction))(action.action)
         if !QMK.IsCallable(action) {
             nativeText := String(action)
-            action := ((text) => (*) => QMK.PasteTextWithDll(text))(nativeText)
+            action := ((text) => (*) => QMK.InterceptionPaste(text))(nativeText)
         }
         wrapped := QMK.WrapShortcutCallback(action, contexts)
         if (contexts.Length == 0 || (contexts.Length == 1 && contexts[1] = "global")) {
@@ -3592,6 +3531,8 @@ class QMKTextAndHotkeyAPIs extends QMKUserAPIs {
                 return "panicExit"
             case "nativereload", "qmknativereload":
                 return "nativeReload"
+            case "nativesuspend", "qmknativesuspend":
+                return "nativeSuspend"
             default:
                 return ""
         }
@@ -3607,6 +3548,8 @@ class QMKTextAndHotkeyAPIs extends QMKUserAPIs {
                     QMK.SetupPanicExitHotkey(row.spec)
                 case "nativeReload":
                     QMK.SetupNativeReloadHotkey(row.spec, false)
+                case "nativeSuspend":
+                    QMK.SetupNativeSuspendHotkey(row.spec)
                 default:
                     normalRows.Push(entry)
             }
@@ -3882,6 +3825,33 @@ class QMKRuntimeControls extends QMKTextAndHotkeyAPIs {
         return true
     }
 
+    static SetupNativeSuspendHotkey(hotkeySpec := "^!s") {
+        if !DllCall(QMK.Proc("QMK_SetNativeSuspendHotkeyEntry"), "Str", String(hotkeySpec), "Int", 1, "Int")
+            throw Error("QMK native suspend hotkey must be a native-loadable keyboard hotkey", , hotkeySpec)
+        if !this.nativeSuspendSyncTimer {
+            this.nativeSuspendSyncTimer := ObjBindMethod(this, "SyncNativeSuspendState")
+            SetTimer(this.nativeSuspendSyncTimer, 50)
+        }
+        this.SyncNativeSuspendState()
+        return true
+    }
+
+    static nativeSuspendSyncTimer := 0
+    static nativeSuspendSynced := -1
+
+    static SyncNativeSuspendState() {
+        proc := QMK.ProcOptional("QMK_GetRuntimeHotkeysSuspended")
+        if !proc
+            return
+        state := DllCall(proc, "Int") ? 1 : 0
+        if (state = this.nativeSuspendSynced)
+            return
+        this.nativeSuspendSynced := state
+        Suspend(state != 0)
+        ToolTip("QMK " (state ? "Suspended" : "Resumed"))
+        SetTimer(() => ToolTip(), -900)
+    }
+
     static NativeReload() {
         static lastReloadTick := 0
         now := A_TickCount
@@ -3956,8 +3926,8 @@ native side can rebuild once instead of once per shortcut:
     ])
 
     QMK.SetupHolds([
-        ["e", "global", (*) => edge.activate(true)],
-        { key: "f", context: "global", callback: (*) => globals.activaterun("ChatGPT") }
+        ["e", "global", (*) => ActivateExampleApp()],
+        { key: "f", context: "global", callback: (*) => RunExampleCommand() }
     ])
 
     QMK.SetupHotkeys([
@@ -3968,43 +3938,43 @@ native side can rebuild once instead of once per shortcut:
     ])
 
     QMK.SetupTaps([
-        ["h", "Med School - Anki", QMK.SendKeyDirect("1")],
-        ["j", "Med School - Anki", QMK.SendKeyDirect("2")],
-        ["k", "Med School - Anki", QMK.SendKeyDirect("4")],
-        ["l", "Med School - Anki", QMK.SendKeyDirect("{Enter}")],
-        ["a", "Med School - Anki", QMK.SendKeyDirect("1"), (*) => anki.activate(true)]
+        ["h", "Example Editor", QMK.SendKeyDirect("1")],
+        ["j", "Example Editor", QMK.SendKeyDirect("2")],
+        ["k", "Example Editor", QMK.SendKeyDirect("4")],
+        ["l", "Example Editor", QMK.SendKeyDirect("{Enter}")],
+        ["a", "Example Editor", QMK.SendKeyDirect("1"), (*) => ActivateExampleApp()]
     ])
 
     QMK.SetupTap("h", QMK.SendKeyDirect("1"))
-    QMK.SetupTap("l", "Med School - Anki", QMK.SendKeyDirect("{Enter}"))
+    QMK.SetupTap("l", "Example Editor", QMK.SendKeyDirect("{Enter}"))
     QMK.SetupTap({ key: "CapsLock", context: "global", tap: QMK.SendKeyDirect("{Esc}") })
 
     QMK.SetupCombos([
         ["f", "u", "global", QMK.SendKeyDirect("{Browser_Back}")],
         ["a", "h", "global", QMK.SendKeyDirect("^{Left}")],
         ["a", ";", "global", QMK.SendKeyDirect("{Backspace}"), "instant"],
-        { primary: "v", secondary: "m", context: "global", mode: "instant", callback: (*) => media.volume.mute() },
+        { primary: "v", secondary: "m", context: "global", mode: "instant", callback: (*) => ToggleExampleMedia() },
         { primary: "x", secondary: "c", context: "global", action: QMK.SendKeyDirect("c", "^") }
     ])
 
     QMK.SetupChords([
         ["a", "s", "l", "global", QMK.SendKeyDirect("^+{Right}")],
-        ["a", "s", "d", "l", "global", (*) => VDA.GoRight()],
-        { keys: ["a", "s", "d", "f", "o"], context: "global", callback: (*) => outlookdesktop.activate(true) }
+        ["a", "s", "d", "l", "global", (*) => MoveToNextPane()],
+        { keys: ["a", "s", "d", "f", "o"], context: "global", callback: (*) => ActivateExampleApp() }
     ])
 
     QMK.SetupDoubleTaps([
-        ["LCtrl", "outlook.live.com", (*) => outlookdesktop.activate(true)]
+        ["LCtrl", "example.com", (*) => ActivateExampleApp()]
     ])
 
-    QMK.SetupTapHolds([
-        ["Space", "global", 175, (*) => Send(" "), (*) => ShowMenuWithDigits(MenuMap["default"])],
+    QMK.SetupTaps([
+        ["Space", "global", (*) => Send(" "), (*) => ShowMenuWithDigits(MenuMap["default"]), 175],
         { key: "CapsLock", context: "global", thresholdMs: 175, tap: (*) => Send("{Esc}"), hold: (*) => ShowMenuWithDigits(MenuMap["default"]) }
     ])
 
     QMK.SetupHotstrings([
-        [":*:addr", "global", "123 Example Street"],
-        [":*:sig", "ahk_exe OUTLOOK.EXE", (*) => PasteEmailSignature()]
+        [":*:demo", "global", "Example replacement"],
+        [":*:sample", "ahk_exe ExampleApp.exe", (*) => InsertExampleSignature()]
     ])
 
 Callback versus native-send rule of thumb:
@@ -4025,7 +3995,7 @@ QMK.Tap(...) remains available for one-off hotkey rows when you do not want to
 make a separate tap family:
 
     QMK.SetupHotkeys([
-        ["l", "Med School - Anki", QMK.Tap("{Enter}")]
+        ["l", "Example Editor", QMK.Tap("{Enter}")]
     ])
 
 Tap row shapes:
@@ -4037,8 +4007,8 @@ Tap row shapes:
 
 The object shape is also supported:
 
-    { key: "l", context: "Med School - Anki", tap: QMK.SendKeyDirect("{Enter}") }
-    { key: "a", context: "Med School - Anki", tap: QMK.SendKeyDirect("1"), hold: (*) => anki.activate(true), thresholdMs: 175 }
+    { key: "l", context: "Example Editor", tap: QMK.SendKeyDirect("{Enter}") }
+    { key: "a", context: "Example Editor", tap: QMK.SendKeyDirect("1"), hold: (*) => ActivateExampleApp(), thresholdMs: 175 }
     QMK.SetupTap({ key: "CapsLock", context: "global", tap: QMK.SendKeyDirect("{Esc}") })
 
 If thresholdMs is omitted or 0, the core uses the configured hold timing where
@@ -4055,3 +4025,130 @@ class QMK extends QMKRuntimeControls {
         QMK.Init()
     }
 }
+
+; Launch the compiler's saved-settings CLI without reloading this AHK script.
+; The CLI regenerates the saved Zig user-shortcut bundle, rebuilds QMKCore,
+; and embeds the resulting DLL into QMKVariables.ahk.
+QMKRecompileLast(mode := "saved") {
+    if QMKRecompileLastMonitor.IsActive() {
+        QMKRecompileTooltip("QMK recompile is already running.", 2500)
+        return false
+    }
+
+    switch StrLower(mode) {
+        case "saved":
+            argument := "--recompile-last"
+        case "zig":
+            argument := "--recompile-last-zig"
+        case "pgo", "full":
+            argument := "--recompile-last-pgo"
+        default:
+            throw ValueError("Unknown QMK compile mode: " mode)
+    }
+    ; Reload is an explicit caller choice. The compiler records whether the
+    ; build succeeded, and the monitor gates the actual reload on both flags.
+    argument .= " --reload"
+    try {
+        pid := QMKUserConfig.RunPgoCompilerCommand(argument)
+        if !pid
+            throw Error("The QMK compiler process did not start.")
+        QMKRecompileLastMonitor.Start(pid, mode)
+        QMKRecompileTooltip("QMK recompile started`nMode: " mode, 2000)
+        return true
+    } catch Error as err {
+        ToolTip("QMK recompile could not start`n" err.Message)
+        SetTimer(() => ToolTip(), -3000)
+        return false
+    }
+}
+
+QMKRecompileTooltip(text, durationMs := 2500) {
+    ToolTip(text)
+    SetTimer(() => ToolTip(), -durationMs)
+}
+
+class QMKRecompileLastMonitor {
+    static compilerPid := 0
+    static processSeen := false
+    static startedAt := 0
+    static mode := ""
+    static statusPath := ""
+    static pollTimer := ""
+    static START_TIMEOUT_MS := 10000
+
+    static IsActive() => this.compilerPid != 0
+
+    static Start(pid, mode) {
+        this.compilerPid := pid
+        this.processSeen := false
+        this.startedAt := A_TickCount
+        this.mode := mode
+        this.statusPath := QMKSettings.ProductionDir() "\qmk_compiler_status.ini"
+        this.pollTimer := ObjBindMethod(this, "Poll")
+        SetTimer(this.pollTimer, 100)
+    }
+
+    static Poll() {
+        pid := this.compilerPid
+        if !pid
+            return
+
+        if !this.processSeen {
+            if ProcessExist(pid) {
+                this.processSeen := true
+                QMKRecompileTooltip("QMK recompile is running`nMode: " this.mode, 2000)
+                return
+            }
+            if (A_TickCount - this.startedAt >= this.START_TIMEOUT_MS) {
+                this.Stop()
+                QMKRecompileTooltip("QMK compiler process did not appear.", 3500)
+            }
+            return
+        }
+
+        if ProcessExist(pid)
+            return
+
+        status := this.ReadCompilerStatus()
+        this.Stop()
+        if (status.terminal = "success" && status.reload = "1") {
+            QMKRecompileTooltip("QMK recompile succeeded`nReloading QMK...", 2500)
+            SetTimer(() => QMK.NativeReload(), -1000)
+        } else if (status.terminal = "failure") {
+            QMKRecompileTooltip("QMK recompile failed`nQMK was not reloaded.", 3500)
+        } else {
+            QMKRecompileTooltip("QMK recompile ended without a successful status`nQMK was not reloaded.", 3500)
+        }
+    }
+
+    static ReadCompilerStatus() {
+        status := {terminal: "", reload: "0"}
+        if (this.statusPath = "" || !FileExist(this.statusPath))
+            return status
+        try {
+            text := FileRead(this.statusPath, "UTF-8")
+            if RegExMatch(text, "m)^terminal=(.*)$", &terminal)
+                status.terminal := Trim(terminal[1])
+            if RegExMatch(text, "m)^reload=(.*)$", &reload)
+                status.reload := Trim(reload[1])
+        } catch
+            return {terminal: "", reload: "0"}
+        return status
+    }
+
+    static Stop() {
+        if this.pollTimer
+            SetTimer(this.pollTimer, 0)
+        this.pollTimer := ""
+        this.compilerPid := 0
+        this.processSeen := false
+        this.startedAt := 0
+        this.mode := ""
+        this.statusPath := ""
+    }
+}
+
+; Ctrl+Win+R recompiles using the last saved compiler mode from QMKconfig.ini.
+QMK.SetupHotkeys([
+    ["^#r", "global", (*) => QMKRecompileLast()]
+])

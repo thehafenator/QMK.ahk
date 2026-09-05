@@ -15,11 +15,100 @@
 const std = @import("std");
 const windows = std.os.windows;
 const build_options = @import("build_options");
+const compiled_shortcuts_test_observability: bool = if (@hasDecl(build_options, "compiled_shortcuts_test_observability"))
+    build_options.compiled_shortcuts_test_observability
+else
+    false;
 const microbenchdebug: bool = if (@hasDecl(build_options, "microbenchdebug")) build_options.microbenchdebug else false;
 const compile_with_profiling: bool = if (@hasDecl(build_options, "compile_with_profiling")) build_options.compile_with_profiling else false;
 const compile_with_pgo: bool = if (@hasDecl(build_options, "compile_with_pgo")) build_options.compile_with_pgo else false;
-const has_qmk_shortcuts_build: bool = false;
-const has_qmk_hotstrings_build: bool = false;
+const has_qmk_shortcuts_build: bool = if (@hasDecl(build_options, "has_qmk_shortcuts")) build_options.has_qmk_shortcuts else false;
+const has_qmk_hotstrings_build: bool = if (@hasDecl(build_options, "has_qmk_hotstrings")) build_options.has_qmk_hotstrings else false;
+const import_user_shortcuts_build: bool = if (@hasDecl(build_options, "import_user_shortcuts")) build_options.import_user_shortcuts else false;
+const has_compiled_user_shortcuts_build: bool = import_user_shortcuts_build;
+const compiled_user_shortcuts = if (import_user_shortcuts_build) build_options.user_shortcuts else struct {};
+
+// Generated shortcut source intentionally keeps readable key spellings such
+// as "a", ";", and "Backspace".  Lower them once at comptime while loading
+// the generated families; runtime storage and event matching remain numeric.
+fn precompiledKeyEq(comptime a: []const u8, comptime b: []const u8) bool {
+    if (a.len != b.len) return false;
+    inline for (b, 0..) |c, i| {
+        if (a[i] != c and (a[i] | 0x20) != (c | 0x20)) return false;
+    }
+    return true;
+}
+
+fn precompiledVK(comptime name: []const u8) i32 {
+    if (comptime name.len == 1) {
+        return switch (name[0]) {
+            'a'...'z', 'A'...'Z' => name[0] & 0xDF,
+            '0'...'9' => name[0],
+            ';' => 0xBA, '=' => 0xBB, ',' => 0xBC, '-' => 0xBD,
+            '.' => 0xBE, '/' => 0xBF, '`' => 0xC0, '[' => 0xDB,
+            '\\' => 0xDC, ']' => 0xDD, '\'' => 0xDE,
+            else => @compileError("unsupported generated shortcut key spelling: " ++ name),
+        };
+    }
+    if (comptime precompiledKeyEq(name, "Escape") or precompiledKeyEq(name, "Esc")) return 0x1B;
+    if (comptime precompiledKeyEq(name, "Tab")) return 0x09;
+    if (comptime precompiledKeyEq(name, "Enter") or precompiledKeyEq(name, "Return")) return 0x0D;
+    if (comptime precompiledKeyEq(name, "Backspace")) return 0x08;
+    if (comptime precompiledKeyEq(name, "Space")) return 0x20;
+    if (comptime precompiledKeyEq(name, "CapsLock")) return 0x14;
+    if (comptime precompiledKeyEq(name, "AppsKey")) return 0x5D;
+    if (comptime precompiledKeyEq(name, "Shift")) return 0x10;
+    if (comptime precompiledKeyEq(name, "Control") or precompiledKeyEq(name, "Ctrl")) return 0x11;
+    if (comptime precompiledKeyEq(name, "PgUp") or precompiledKeyEq(name, "PageUp")) return 0x21;
+    if (comptime precompiledKeyEq(name, "PgDn") or precompiledKeyEq(name, "PageDown")) return 0x22;
+    if (comptime precompiledKeyEq(name, "PrintScreen") or precompiledKeyEq(name, "PrintScr")) return 0x2C;
+    if (comptime precompiledKeyEq(name, "MButton")) return 0x04;
+    if (comptime precompiledKeyEq(name, "XButton1")) return 0x05;
+    if (comptime precompiledKeyEq(name, "XButton2")) return 0x06;
+    if (comptime precompiledKeyEq(name, "ScrollLock")) return 0x91;
+    if (comptime precompiledKeyEq(name, "NumLock")) return 0x90;
+    if (comptime precompiledKeyEq(name, "Insert")) return 0x2D;
+    if (comptime precompiledKeyEq(name, "Delete")) return 0x2E;
+    if (comptime precompiledKeyEq(name, "Home")) return 0x24;
+    if (comptime precompiledKeyEq(name, "End")) return 0x23;
+    if (comptime precompiledKeyEq(name, "Left")) return 0x25;
+    if (comptime precompiledKeyEq(name, "Up")) return 0x26;
+    if (comptime precompiledKeyEq(name, "Right")) return 0x27;
+    if (comptime precompiledKeyEq(name, "Down")) return 0x28;
+    if (comptime precompiledKeyEq(name, "LControl") or precompiledKeyEq(name, "LCtrl")) return 0xA2;
+    if (comptime precompiledKeyEq(name, "RControl") or precompiledKeyEq(name, "RCtrl")) return 0xA3;
+    if (comptime precompiledKeyEq(name, "LShift")) return 0xA0;
+    if (comptime precompiledKeyEq(name, "RShift") or precompiledKeyEq(name, "Rshift")) return 0xA1;
+    if (comptime precompiledKeyEq(name, "LAlt")) return 0xA4;
+    if (comptime precompiledKeyEq(name, "RAlt") or precompiledKeyEq(name, "Ralt")) return 0xA5;
+    if (comptime precompiledKeyEq(name, "LWin")) return 0x5B;
+    if (comptime precompiledKeyEq(name, "RWin")) return 0x5C;
+    if (comptime precompiledKeyEq(name, "F1") or precompiledKeyEq(name, "f1")) return 0x70;
+    if (comptime precompiledKeyEq(name, "F2") or precompiledKeyEq(name, "f2")) return 0x71;
+    if (comptime precompiledKeyEq(name, "F3") or precompiledKeyEq(name, "f3")) return 0x72;
+    if (comptime precompiledKeyEq(name, "F4") or precompiledKeyEq(name, "f4")) return 0x73;
+    if (comptime precompiledKeyEq(name, "F5") or precompiledKeyEq(name, "f5")) return 0x74;
+    if (comptime precompiledKeyEq(name, "F6") or precompiledKeyEq(name, "f6")) return 0x75;
+    if (comptime precompiledKeyEq(name, "F7") or precompiledKeyEq(name, "f7")) return 0x76;
+    if (comptime precompiledKeyEq(name, "F8") or precompiledKeyEq(name, "f8")) return 0x77;
+    if (comptime precompiledKeyEq(name, "F9") or precompiledKeyEq(name, "f9")) return 0x78;
+    if (comptime precompiledKeyEq(name, "F10") or precompiledKeyEq(name, "f10")) return 0x79;
+    if (comptime precompiledKeyEq(name, "F11") or precompiledKeyEq(name, "f11")) return 0x7A;
+    if (comptime precompiledKeyEq(name, "F12") or precompiledKeyEq(name, "f12")) return 0x7B;
+    if (comptime precompiledKeyEq(name, "F13") or precompiledKeyEq(name, "f13")) return 0x7C;
+    if (comptime precompiledKeyEq(name, "F14") or precompiledKeyEq(name, "f14")) return 0x7D;
+    if (comptime precompiledKeyEq(name, "F15") or precompiledKeyEq(name, "f15")) return 0x7E;
+    if (comptime precompiledKeyEq(name, "F16") or precompiledKeyEq(name, "f16")) return 0x7F;
+    if (comptime precompiledKeyEq(name, "F17") or precompiledKeyEq(name, "f17")) return 0x80;
+    if (comptime precompiledKeyEq(name, "F18") or precompiledKeyEq(name, "f18")) return 0x81;
+    if (comptime precompiledKeyEq(name, "F19") or precompiledKeyEq(name, "f19")) return 0x82;
+    if (comptime precompiledKeyEq(name, "F20") or precompiledKeyEq(name, "f20")) return 0x83;
+    if (comptime precompiledKeyEq(name, "F21") or precompiledKeyEq(name, "f21")) return 0x84;
+    if (comptime precompiledKeyEq(name, "F22") or precompiledKeyEq(name, "f22")) return 0x85;
+    if (comptime precompiledKeyEq(name, "F23") or precompiledKeyEq(name, "f23")) return 0x86;
+    if (comptime precompiledKeyEq(name, "F24") or precompiledKeyEq(name, "f24")) return 0x87;
+    @compileError("unsupported generated shortcut key spelling: " ++ name);
+}
 
 const ipc = struct {
     pub const RING_CAPACITY: u64 = 256;
@@ -311,9 +400,22 @@ const INFINITE: u32 = 0xFFFFFFFF;
 const WAIT_OBJECT_0: u32 = 0;
 const WAIT_TIMEOUT: u32 = 0x00000102;
 const HANDLE = windows.HANDLE;
-const TRUE: BOOL = 1;
+// Zig 0.16 exposes Windows BOOL as c_int for this ABI. Keep these as integer
+// constants so the declarations remain valid across the enum-backed and
+// c_int-backed std.os.windows variants.
+const TRUE: BOOL = switch (@typeInfo(BOOL)) {
+    .int => 1,
+    .@"enum" => @enumFromInt(1),
+    else => @compileError("Windows BOOL must be integer- or enum-backed"),
+};
+const FALSE: BOOL = switch (@typeInfo(BOOL)) {
+    .int => 0,
+    .@"enum" => @enumFromInt(0),
+    else => @compileError("Windows BOOL must be integer- or enum-backed"),
+};
 const INPUT_KEYBOARD: u32 = 1;
 const KEYEVENTF_KEYUP: u32 = 0x0002;
+const KEYEVENTF_UNICODE: u32 = 0x0004;
 const MAPVK_VK_TO_VSC: u32 = 0;
 const MAPVK_VSC_TO_VK: u32 = 1;
 const MAPVK_VSC_TO_VK_EX: u32 = 3;
@@ -374,15 +476,6 @@ const WM_SYSKEYDOWN: usize = 0x0104;
 const WM_SYSKEYUP: usize = 0x0105;
 const WM_QUIT: u32 = 0x0012;
 const PM_NOREMOVE: u32 = 0x0000;
-const EVENT_SYSTEM_FOREGROUND: DWORD = 0x0003;
-const EVENT_SYSTEM_MENUPOPUPSTART: DWORD = 0x0006;
-const EVENT_SYSTEM_MENUPOPUPEND: DWORD = 0x0007;
-const EVENT_OBJECT_SHOW: DWORD = 0x8002;
-const EVENT_OBJECT_HIDE: DWORD = 0x8003;
-const EVENT_OBJECT_FOCUS: DWORD = 0x8005;
-const EVENT_OBJECT_NAMECHANGE: DWORD = 0x800C;
-const OBJID_WINDOW: i32 = 0;
-const WINEVENT_OUTOFCONTEXT: DWORD = 0x0000;
 const GA_ROOT: u32 = 2;
 const CONTEXT_MENU_CLASS = [_:0]u16{ '#', '3', '2', '7', '6', '8' };
 const LLKHF_EXTENDED: u32 = 0x01;
@@ -393,38 +486,9 @@ const INPUT_BACKEND_INTERCEPTION: i32 = 1;
 const INPUT_BACKEND_LLHOOK: i32 = 2;
 const INPUT_BACKEND_AHK_HOTKEYS: i32 = 3;
 
-const PASSTHROUGH_VKS = [_]i32{
-    112,
-    113,
-    114,
-    115,
-    116,
-    117,
-    118,
-    119,
-    120,
-    121,
-    122,
-    123,
-    124,
-    125,
-    126,
-    127,
-    128,
-    129,
-    130,
-    131,
-    132,
-    133,
-    134,
-    135,
-};
-
 fn isPassthroughVK(vk: i32) bool {
-    inline for (PASSTHROUGH_VKS) |passVk| {
-        if (vk == passVk) return true;
-    }
-    return false;
+    if (vk <= 0 or vk >= VK_COUNT or isModVK(vk)) return false;
+    return activeRuntimePassthroughs().enabled[@intCast(vk)];
 }
 
 // ============================================================================
@@ -533,8 +597,468 @@ fn shortcutKeyWide(buf: *[KN_LEN:0]u16, text: []const u8) [*:0]const u16 {
 }
 
 fn applyPrecompiledShortcuts() void {
+    if (comptime has_compiled_user_shortcuts_build) {
+        if (g_precompiledShortcutsApplied) {
+            markKeyGateDirty();
+            refreshReplayKeyGate();
+            return;
+        }
+        g_precompiledShortcutsLoadStarted = true;
+        applyTypedPrecompiledShortcuts();
+    }
     markKeyGateDirty();
     refreshReplayKeyGate();
+}
+
+// Typed precompiled data is copied into the same private runtime stores used
+// by later QMK_Setup registrations.  In particular, hotkeys use the runtime
+// ready-index family, so compiled rows precede later runtime rows.  The old
+// opaque install(api) artifact is rejected instead of being silently dropped.
+fn precompiledContextKind(kind: anytype) u8 {
+    if (kind == .global) return RUNTIME_CONTEXT_GLOBAL_KIND;
+    if (kind == .menu) return RUNTIME_CONTEXT_MENU_KIND;
+    if (kind == .website) return RUNTIME_CONTEXT_URL_KIND;
+    if (kind == .title) return RUNTIME_CONTEXT_TITLE_KIND;
+    if (kind == .class) return RUNTIME_CONTEXT_CLASS_KIND;
+    if (kind == .browser) return RUNTIME_CONTEXT_BROWSER_KIND;
+    if (kind == .exe) return RUNTIME_CONTEXT_EXE_KIND;
+    if (kind == .compound) return RUNTIME_CONTEXT_COMPOUND_KIND;
+    return RUNTIME_CONTEXT_GLOBAL_KIND;
+}
+
+fn precompiledThresholdMs(ticks: i64) i32 {
+    if (ticks <= 0) return 0;
+    return @intCast(@min(ticks, 2000));
+}
+
+// The normal runtime setup API reports an existing row as a failed insert so
+// callers can detect that their registration was not added.  Precompiled data
+// is different: duplicate source rows are harmless because the first row is
+// already present.  Treat that case as a successful no-op so one duplicate
+// cannot abort and roll back the entire compiled preload.
+fn appendPrecompiledHotkey(
+    vk: i32,
+    mods_required: u16,
+    mods_forbidden: u16,
+    callback_id: i32,
+    hold_callback_id: i32,
+    cleanup_callback_id: i32,
+    threshold_ms: i32,
+    trigger_kind: u8,
+    action_kind: u8,
+    requested_suppress: bool,
+    context_kind: u8,
+    context_negated: bool,
+    context_text: []const u16,
+    option_bits: u32,
+    physical_mod_vk: u8,
+    physical_mods_required: u8,
+    physical_mods_forbidden: u8,
+) bool {
+    if (runtimeContextPartCount(context_text) > 1) {
+        var all_ok = true;
+        var contexts = RuntimeContextListIterator{ .raw = context_text };
+        while (contexts.next()) |context_part| {
+            const context = parseRuntimeContextSpec(context_part);
+            all_ok = appendPrecompiledHotkey(
+                vk, mods_required, mods_forbidden, callback_id, hold_callback_id,
+                cleanup_callback_id, threshold_ms, trigger_kind, action_kind,
+                requested_suppress, context.kind, context.negated, context.text,
+                option_bits, physical_mod_vk, physical_mods_required,
+                physical_mods_forbidden,
+            ) and all_ok;
+        }
+        return all_ok;
+    }
+    const suspend_exempt = runtimeHotkeySuspendExemptFromOptions(option_bits);
+    const threshold_ticks = if (threshold_ms > 0) msToTicksInt(threshold_ms) else 0;
+    if (runtimeHotkeyDuplicate(
+        vk, mods_required, mods_forbidden, trigger_kind, callback_id,
+        hold_callback_id, cleanup_callback_id, threshold_ticks, action_kind,
+        suspend_exempt, context_kind, context_negated, context_text,
+        physical_mod_vk, physical_mods_required, physical_mods_forbidden,
+    )) return true;
+    return appendRuntimeHotkey(
+        vk, mods_required, mods_forbidden, callback_id, hold_callback_id,
+        cleanup_callback_id, threshold_ms, trigger_kind, action_kind,
+        requested_suppress, context_kind, context_negated, context_text,
+        option_bits, physical_mod_vk, physical_mods_required,
+        physical_mods_forbidden,
+    );
+}
+
+fn precompiledChordDuplicate(raw_in: [5]i32, row_in: RuntimeChord, context_text: []const u16) bool {
+    var raw_vks = raw_in;
+    if (raw_vks[0] == 0 or raw_vks[1] == 0) return false;
+    var row = row_in;
+    sortSmall5(&raw_vks, raw_vks.len);
+    row.keyCount = 0;
+    for (raw_vks) |vk| {
+        if (vk == 0) continue;
+        if (row.keyCount >= row.vks.len) return false;
+        row.vks[@intCast(row.keyCount)] = vk;
+        row.keyCount += 1;
+    }
+    if (row.keyCount < 2) return false;
+    row.key = @as(u64, @intCast(row.vks[0])) | (@as(u64, @intCast(row.vks[1])) << 16);
+    if (row.keyCount >= 3) row.key |= (@as(u64, @intCast(row.vks[2])) << 32);
+    if (row.keyCount >= 4) row.key |= (@as(u64, @intCast(row.vks[3])) << 48);
+    if (row.keyCount >= 5) row.key ^= @as(u64, @intCast(row.vks[4]));
+    var i: usize = 0;
+    while (i < g_runtimeChordsLen) : (i += 1) {
+        const existing = g_runtimeChords[i];
+        if (existing.key != row.key or existing.contextKind != row.contextKind or existing.contextNegated != row.contextNegated)
+            continue;
+        if (existing.callbackId != row.callbackId or existing.targetVK != row.targetVK or
+            existing.modMask != row.modMask or existing.mode != row.mode or
+            existing.suspendExempt != row.suspendExempt)
+            continue;
+        if (runtimeContextTextEqual(g_runtimeChordTexts[i][0..@as(usize, @intCast(existing.contextLen))], context_text))
+            return true;
+    }
+    return false;
+}
+
+fn appendPrecompiledChord(raw_in: [5]i32, row_in: RuntimeChord, context_text: []const u16) bool {
+    if (runtimeContextPartCount(context_text) > 1) {
+        var all_ok = true;
+        var contexts = RuntimeContextListIterator{ .raw = context_text };
+        while (contexts.next()) |context_part| {
+            const context = parseRuntimeContextSpec(context_part);
+            var row = row_in;
+            row.contextKind = context.kind;
+            row.contextNegated = context.negated;
+            all_ok = appendPrecompiledChord(raw_in, row, context.text) and all_ok;
+        }
+        return all_ok;
+    }
+    if (precompiledChordDuplicate(raw_in, row_in, context_text)) return true;
+    return appendRuntimeChord(raw_in, row_in, context_text);
+}
+
+fn appendPrecompiledContextAction(vk: i32, callback_id: i32, action_kind: u8, context_kind: u8, context_negated: bool, context_text: []const u16, suspend_exempt: bool) bool {
+    if (runtimeContextPartCount(context_text) > 1) {
+        var all_ok = true;
+        var contexts = RuntimeContextListIterator{ .raw = context_text };
+        while (contexts.next()) |context_part| {
+            const context = parseRuntimeContextSpec(context_part);
+            all_ok = appendPrecompiledContextAction(vk, callback_id, action_kind, context.kind, context.negated, context.text, suspend_exempt) and all_ok;
+        }
+        return all_ok;
+    }
+    if (runtimeContextActionDuplicate(vk, callback_id, action_kind, context_kind, context_negated, context_text, suspend_exempt)) return true;
+    return appendRuntimeContextAction(vk, callback_id, action_kind, context_kind, context_negated, context_text, suspend_exempt);
+}
+
+fn appendPrecompiledTapHold(vk: i32, tap_callback_id: i32, hold_callback_id: i32, cleanup_callback_id: i32, threshold_ms: i32, context_kind: u8, context_negated: bool, context_text: []const u16, suspend_exempt: bool) bool {
+    if (runtimeContextPartCount(context_text) > 1) {
+        var all_ok = true;
+        var contexts = RuntimeContextListIterator{ .raw = context_text };
+        while (contexts.next()) |context_part| {
+            const context = parseRuntimeContextSpec(context_part);
+            all_ok = appendPrecompiledTapHold(vk, tap_callback_id, hold_callback_id, cleanup_callback_id, threshold_ms, context.kind, context.negated, context.text, suspend_exempt) and all_ok;
+        }
+        return all_ok;
+    }
+    if (runtimeTapHoldRegistrationDuplicate(vk, tap_callback_id, hold_callback_id, cleanup_callback_id, threshold_ms, context_kind, context_negated, context_text, suspend_exempt)) return true;
+    return appendRuntimeTapHoldRegistration(vk, tap_callback_id, hold_callback_id, cleanup_callback_id, threshold_ms, context_kind, context_negated, context_text, suspend_exempt);
+}
+
+fn precompiledHotstringOptionBits(options: anytype, suspend_exempt: bool) u32 {
+    var bits: u32 = 0;
+    if (options.case_sensitive) bits |= 1 << 0;
+    if (options.conform_to_case) bits |= 1 << 1;
+    if (options.backspace) bits |= 1 << 2;
+    if (options.omit_end_char) bits |= 1 << 3;
+    if (options.require_end_char) bits |= 1 << 4;
+    if (options.inside_word) bits |= 1 << 5;
+    if (options.reset) bits |= 1 << 6;
+    if (options.execute) bits |= 1 << 7;
+    if (suspend_exempt or options.suspend_exempt) bits |= 1 << 8;
+    if (options.enabled) bits |= 1 << 9;
+    if (options.send_raw) bits |= 1 << 10;
+    bits |= (@as(u32, options.send_mode) & 3) << 12;
+    return bits;
+}
+
+// Generated Zig literals are emitted as zero-terminated UTF-16 arrays so they
+// are safe to inspect as strings. QMKCore's runtime storage, however, stores
+// text as a counted slice and owns its terminator separately. Normalize at the
+// compiled-data boundary so a terminator is never treated as user text.
+fn precompiledU16Span(text: []const u16) []const u16 {
+    if (text.len != 0 and text[text.len - 1] == 0)
+        return text[0 .. text.len - 1];
+    return text;
+}
+
+fn appendTypedPrecompiledHotstring(row: anytype) bool {
+    if (row.trigger.len == 0 or row.trigger.len > hotstrings.MAX_HOTSTRING_TRIGGER_BYTES) return false;
+    if (!ensureRuntimeHotstringCapacity(g_runtimeHotstringLen + 1)) return false;
+    const c = row.context;
+    const context_text = precompiledU16Span(c.text);
+    const non_global = c.kind != .global;
+    if (non_global and context_text.len >= RUNTIME_HOTSTRING_CONTEXT_CHARS) return false;
+    if (non_global and !ensureRuntimeHotstringContextCapacity(g_hsCtxRowsLen + 1)) return false;
+
+    const slot = g_runtimeHotstringLen;
+    const ctx_start = g_hsCtxRowsLen;
+    g_runtimeHotstringLen += 1;
+    @memset(&g_runtimeHotstringTriggerBytes[slot], 0);
+    @memcpy(g_runtimeHotstringTriggerBytes[slot][0..row.trigger.len], row.trigger);
+
+    const option_bits = precompiledHotstringOptionBits(row.options, false);
+    const options = hotstrings.HotstringOptions.fromBits(option_bits);
+    const action: hotstrings.HotstringActionKind = switch (row.action) {
+        .paste_withbackup => .paste_withbackup,
+        .interception_text => .interception_text,
+        .ahk_callback => .ahk_callback,
+    };
+    var replacement: []const u8 = "";
+    if (row.replacement.len != 0) {
+        replacement = utf16ToUtf8Alloc(precompiledU16Span(row.replacement)) catch {
+            g_runtimeHotstringLen -= 1;
+            return false;
+        };
+    }
+    g_runtimeHotstringEntries[slot] = .{
+        .trigger = g_runtimeHotstringTriggerBytes[slot][0..row.trigger.len],
+        .replacement = replacement,
+        .action = action,
+        .options = options,
+    };
+    g_runtimeHotstringCallbackIds[slot] = if (action == .ahk_callback) precompiledCallbackId(row.callback_id) else -1;
+    g_runtimeHotstringSuspendExempt[slot] = options.suspend_exempt;
+    g_runtimeHotstringUserEnabled[slot] = options.enabled;
+    g_runtimeHotstringCtxStart[slot] = 0;
+    g_runtimeHotstringCtxCount[slot] = 0;
+
+    if (non_global) {
+        @memset(&g_hsCtxTexts[ctx_start], 0);
+        @memcpy(g_hsCtxTexts[ctx_start][0..context_text.len], context_text);
+        g_hsCtxRows[ctx_start] = .{
+            .contextKind = precompiledContextKind(c.kind),
+            .contextNegated = c.negated,
+            .contextLen = @intCast(context_text.len),
+            .specificityMask = runtimeHotkeySpecificityMask(precompiledContextKind(c.kind), g_hsCtxTexts[ctx_start][0..context_text.len]),
+            .allowed = true,
+        };
+        g_hsCtxRowsLen += 1;
+        g_runtimeHotstringCtxStart[slot] = @intCast(ctx_start);
+        g_runtimeHotstringCtxCount[slot] = 1;
+        g_runtimeHotstringDependencyMask |= g_hsCtxRows[ctx_start].specificityMask;
+    }
+    g_hsContextIndexDirty = true;
+    // A duplicate hotstring is a normal source-level condition: runtime setup
+    // skips that row and keeps the other registrations. Do the same for the
+    // compiled preload instead of rolling back the entire generated family.
+    if (runtimeHotstringDuplicateAt(slot)) {
+        rollbackRuntimeHotstring(slot);
+        g_hsCtxRowsLen = ctx_start;
+        return true;
+    }
+    if (!commitRuntimeHotstringCallbackExemption(slot)) {
+        rollbackRuntimeHotstring(slot);
+        g_hsCtxRowsLen = ctx_start;
+        return false;
+    }
+    return true;
+}
+
+fn applyTypedPrecompiledShortcuts() void {
+    @setEvalBranchQuota(100000);
+    if (comptime !@hasDecl(compiled_user_shortcuts, "Compiled_Modifiers") or
+        !@hasDecl(compiled_user_shortcuts, "Compiled_Native_Controls") or
+        !@hasDecl(compiled_user_shortcuts, "Compiled_Passthroughs") or
+        !@hasDecl(compiled_user_shortcuts, "Compiled_Hotkeys") or
+        !@hasDecl(compiled_user_shortcuts, "Compiled_Holds") or
+        !@hasDecl(compiled_user_shortcuts, "Compiled_Double_Taps") or
+        !@hasDecl(compiled_user_shortcuts, "Compiled_Taps") or
+        !@hasDecl(compiled_user_shortcuts, "Compiled_Tap_Holds") or
+        !@hasDecl(compiled_user_shortcuts, "Compiled_Combos") or
+        !@hasDecl(compiled_user_shortcuts, "Compiled_Chords") or
+        !@hasDecl(compiled_user_shortcuts, "Compiled_Hotstrings") or
+        !@hasDecl(compiled_user_shortcuts, "Compiled_Callbacks") or
+        !@hasDecl(compiled_user_shortcuts, "Compiled_Source_Order"))
+    {
+        @compileError("compiled user shortcuts must expose typed Compiled_* families; legacy install(api) artifact rejected");
+    }
+    acquireSetupPublishLock();
+    defer releaseSetupPublishLock();
+    prepareRuntimeModifierFamily();
+    prepareRuntimePassthroughFamily();
+    prepareRuntimeHotkeyFamily();
+    prepareRuntimeContextActionFamily();
+    prepareRuntimeComboFamily();
+    prepareRuntimeChordFamily();
+    prepareRuntimeHotstringFamily();
+    if (compiled_shortcuts_test_observability) g_precompiledFamilyCounts = [_]u32{0} ** 14;
+    var ok = true;
+    inline for (compiled_user_shortcuts.Compiled_Native_Controls.panic_exit) |row| {
+        if (row.kind != .panic_exit) continue;
+        _ = QMK_SetPanicExitHotkey(precompiledVK(row.trigger), row.mods_required, row.mods_forbidden, if (row.enabled) 1 else 0);
+    }
+    inline for (compiled_user_shortcuts.Compiled_Native_Controls.native_reload) |row| {
+        if (row.kind != .native_reload) continue;
+        _ = QMK_SetNativeReloadHotkey(precompiledVK(row.trigger), row.mods_required, row.mods_forbidden, if (row.enabled) 1 else 0);
+    }
+    if (comptime @hasDecl(compiled_user_shortcuts.Compiled_Native_Controls, "toggle_suspend")) {
+        inline for (compiled_user_shortcuts.Compiled_Native_Controls.toggle_suspend) |row| {
+            if (row.kind != .toggle_suspend) continue;
+            _ = QMK_SetNativeSuspendHotkey(precompiledVK(row.trigger), row.mods_required, row.mods_forbidden, if (row.enabled) 1 else 0);
+        }
+    }
+    inline for (compiled_user_shortcuts.Compiled_Modifiers.rows) |row| {
+        const c = row.context;
+        ok = appendRuntimeModifier(precompiledVK(row.key), row.mod_type, precompiledContextKind(c.kind), c.negated, c.text, row.suspend_exempt) and ok;
+    }
+    inline for (compiled_user_shortcuts.Compiled_Passthroughs.rows) |row| {
+        const c = row.context;
+        ok = appendRuntimePassthrough(precompiledVK(row.key), precompiledContextKind(c.kind), c.negated, c.text, row.suspend_exempt) and ok;
+    }
+    inline for (compiled_user_shortcuts.Compiled_Hotkeys.rows) |row| {
+        const c = row.context;
+        var callback_id = precompiledCallbackId(row.callback_id);
+        const hold_callback_id = precompiledCallbackId(row.hold_callback_id);
+        const cleanup_callback_id = precompiledCallbackId(row.cleanup_callback_id);
+        // Generated rows carry UTF-16 payloads with a trailing zero.  The
+        // empty payload is therefore often emitted as &.{ 0 }, not &.{}.
+        // Test the logical span, otherwise every callback row is mistaken for
+        // a native payload and its compiled AHK callback ID is discarded.
+        const native_payload = precompiledU16Span(row.native_payload);
+        if (native_payload.len != 0) {
+            const payload_base = appendNativeHotkeyPayloads(native_payload.ptr, @intCast(native_payload.len));
+            if (payload_base == NATIVE_PAYLOAD_APPEND_FAILED) {
+                ok = false;
+            } else {
+                callback_id = NATIVE_PAYLOAD_ID_BASE - @as(i32, @intCast(payload_base));
+                initNativePasteThread();
+            }
+        }
+        var bits: u32 = 0;
+        if (row.suspend_exempt) bits |= 1 << 8;
+        ok = appendPrecompiledHotkey(precompiledVK(row.trigger), row.mods_required, row.mods_forbidden, callback_id,
+            hold_callback_id, cleanup_callback_id, precompiledThresholdMs(row.threshold_ticks),
+            row.trigger_kind, row.action_kind, row.suppress_original, precompiledContextKind(c.kind), c.negated,
+            c.text, bits, row.physical_mod_vk, row.physical_mods_required, row.physical_mods_forbidden) and ok;
+    }
+    inline for (compiled_user_shortcuts.Compiled_Holds.rows) |row| {
+        const c = row.context;
+        ok = appendPrecompiledContextAction(precompiledVK(row.key), precompiledCallbackId(row.callback_id), 0, precompiledContextKind(c.kind), c.negated, c.text, row.suspend_exempt) and ok;
+    }
+    inline for (compiled_user_shortcuts.Compiled_Double_Taps.rows) |row| {
+        const c = row.context;
+        ok = appendPrecompiledContextAction(precompiledVK(row.key), precompiledCallbackId(row.callback_id), 1, precompiledContextKind(c.kind), c.negated, c.text, row.suspend_exempt) and ok;
+    }
+    inline for (compiled_user_shortcuts.Compiled_Taps.rows) |row| {
+        const c = row.context;
+        var callback_id = precompiledCallbackId(row.callback_id);
+        const hold_callback_id = precompiledCallbackId(row.hold_callback_id);
+        const cleanup_callback_id = precompiledCallbackId(row.cleanup_callback_id);
+        const native_payload = precompiledU16Span(row.native_payload);
+        if (native_payload.len != 0) {
+            const payload_base = appendNativeHotkeyPayloads(native_payload.ptr, @intCast(native_payload.len));
+            if (payload_base == NATIVE_PAYLOAD_APPEND_FAILED) {
+                ok = false;
+            } else {
+                callback_id = NATIVE_PAYLOAD_ID_BASE - @as(i32, @intCast(payload_base));
+                initNativePasteThread();
+            }
+        }
+        var bits: u32 = 0;
+        if (row.suspend_exempt) bits |= 1 << 8;
+        ok = appendPrecompiledHotkey(precompiledVK(row.trigger), row.mods_required, row.mods_forbidden, callback_id,
+            hold_callback_id, cleanup_callback_id, precompiledThresholdMs(row.threshold_ticks),
+            row.trigger_kind, row.action_kind, row.suppress_original, precompiledContextKind(c.kind), c.negated,
+            c.text, bits, row.physical_mod_vk, row.physical_mods_required, row.physical_mods_forbidden) and ok;
+    }
+    inline for (compiled_user_shortcuts.Compiled_Tap_Holds.rows) |row| {
+        const c = row.context;
+        ok = appendPrecompiledTapHold(precompiledVK(row.key), precompiledCallbackId(row.tap_callback_id), precompiledCallbackId(row.hold_callback_id), precompiledCallbackId(row.cleanup_callback_id),
+            precompiledThresholdMs(row.threshold_ticks), precompiledContextKind(c.kind), c.negated, c.text, row.suspend_exempt) and ok;
+    }
+    inline for (. { compiled_user_shortcuts.Compiled_Combos.normal_callback, compiled_user_shortcuts.Compiled_Combos.instant_callback,
+        compiled_user_shortcuts.Compiled_Combos.internal_remap, compiled_user_shortcuts.Compiled_Combos.internal_instant_remap }) |family| {
+        inline for (family) |source| {
+            const c = source.context;
+            ok = appendPrecompiledCombo(.{ .primaryVK = precompiledVK(source.primary), .secondaryVK = precompiledVK(source.secondary), .callbackId = precompiledCallbackId(source.callback_id),
+                .targetVK = if (source.target.len == 0) 0 else precompiledVK(source.target), .modMask = source.mod_mask, .mode = @intFromEnum(source.mode),
+                .contextKind = precompiledContextKind(c.kind), .contextNegated = c.negated, .suspendExempt = source.suspend_exempt,
+                .registrationOrder = source.registration_order }, c.text) and ok;
+        }
+    }
+    inline for (. { compiled_user_shortcuts.Compiled_Chords.external_callback }) |family| {
+        inline for (family) |source| {
+            const c = source.context;
+            var lowered_vks: [5]i32 = [_]i32{0} ** 5;
+            inline for (source.keys, 0..) |name, index| {
+                if (name.len != 0) lowered_vks[index] = precompiledVK(name);
+            }
+            ok = appendPrecompiledChord(lowered_vks, .{ .vks = lowered_vks, .callbackId = precompiledCallbackId(source.callback_id), .targetVK = if (source.target.len == 0) 0 else precompiledVK(source.target),
+                .modMask = source.mod_mask, .mode = 0, .keyCount = 0,
+                .contextKind = precompiledContextKind(c.kind), .contextNegated = c.negated, .suspendExempt = source.suspend_exempt }, c.text) and ok;
+        }
+    }
+    inline for (. { compiled_user_shortcuts.Compiled_Chords.internal_remap }) |family| {
+        inline for (family) |source| {
+            const c = source.context;
+            var lowered_vks: [5]i32 = [_]i32{0} ** 5;
+            inline for (source.keys, 0..) |name, index| {
+                if (name.len != 0) lowered_vks[index] = precompiledVK(name);
+            }
+            ok = appendPrecompiledChord(lowered_vks, .{ .vks = lowered_vks, .callbackId = precompiledCallbackId(source.callback_id), .targetVK = if (source.target.len == 0) 0 else precompiledVK(source.target),
+                .modMask = source.mod_mask, .mode = 1, .keyCount = 0,
+                .contextKind = precompiledContextKind(c.kind), .contextNegated = c.negated, .suspendExempt = source.suspend_exempt }, precompiledU16Span(c.text)) and ok;
+        }
+    }
+    var precompiled_hotstring_count: u32 = 0;
+    for (compiled_user_shortcuts.Compiled_Hotstrings.rows) |row| {
+        const hotstring_count_before = g_runtimeHotstringLen;
+        const loaded = appendTypedPrecompiledHotstring(row);
+        if (loaded and g_runtimeHotstringLen > hotstring_count_before)
+            precompiled_hotstring_count += 1;
+        ok = loaded and ok;
+    }
+    // Do not roll back the entire compiled preload because one source row is
+    // malformed or exceeds a family limit.  The append helpers are already
+    // transactional per row; rolling back here made a single bad hotstring
+    // erase every otherwise-valid hotkey, hold, combo, chord, and hotstring.
+    // Keep the successfully appended rows and publish them together below.
+    if (!ok) {
+        // Valid rows still publish; ensure the final gate rebuild includes
+        // every family that did load.
+        g_bulkRuntimeKeyGateDirty = true;
+    }
+    if (compiled_shortcuts_test_observability) {
+        g_precompiledFamilyCounts = .{
+            @intCast(compiled_user_shortcuts.Compiled_Modifiers.rows.len),
+            @intCast(compiled_user_shortcuts.Compiled_Passthroughs.rows.len),
+            @intCast(compiled_user_shortcuts.Compiled_Hotkeys.rows.len),
+            @intCast(compiled_user_shortcuts.Compiled_Holds.rows.len),
+            @intCast(compiled_user_shortcuts.Compiled_Double_Taps.rows.len),
+            @intCast(compiled_user_shortcuts.Compiled_Taps.rows.len),
+            @intCast(compiled_user_shortcuts.Compiled_Tap_Holds.rows.len),
+            @intCast(compiled_user_shortcuts.Compiled_Combos.normal_callback.len +
+                compiled_user_shortcuts.Compiled_Combos.internal_remap.len),
+            @intCast(compiled_user_shortcuts.Compiled_Combos.instant_callback.len +
+                compiled_user_shortcuts.Compiled_Combos.internal_instant_remap.len),
+            @intCast(compiled_user_shortcuts.Compiled_Chords.external_callback.len),
+            @intCast(compiled_user_shortcuts.Compiled_Chords.internal_remap.len),
+            precompiled_hotstring_count,
+            @intCast(compiled_user_shortcuts.Compiled_Native_Controls.panic_exit.len),
+            @intCast(compiled_user_shortcuts.Compiled_Native_Controls.native_reload.len),
+        };
+    }
+    // Compiled hotkeys live in the runtime hotkey rows, so they must take the
+    // same context-automaton/index rebuild path as QMK_SetupHotkeys().  The
+    // bulk dirty flag alone rebuilds row metadata but leaves the context loop
+    // and global index stale, making every compiled hotkey invisible.
+    g_runtimeHotkeyContextsDirty = true;
+    g_bulkRuntimeHotkeysDirty = true; g_bulkRuntimeModifiersDirty = true; g_bulkRuntimePassthroughsDirty = true;
+    g_bulkRuntimeContextActionsDirty = true; g_bulkRuntimeCombosDirty = true; g_bulkRuntimeChordsDirty = true;
+    g_bulkRuntimeHotstringsDirty = true; g_bulkRuntimeKeyGateDirty = true;
+    requestRuntimePublish(RUNTIME_PUBLISH_SETUP);
+    if (@atomicLoad(u32, &g_runtimePublishPendingMask, .acquire) == 0)
+        g_precompiledShortcutsApplied = true;
 }
 
 const POINT = extern struct {
@@ -559,8 +1083,6 @@ const KBDLLHOOKSTRUCT = extern struct {
     dwExtraInfo: usize,
 };
 
-const WinEventProc = *const fn (HANDLE, DWORD, HANDLE, i32, i32, DWORD, DWORD) callconv(.winapi) void;
-
 extern "kernel32" fn GetProcessHeap() callconv(.winapi) HANDLE;
 extern "kernel32" fn HeapAlloc(h: HANDLE, flags: DWORD, bytes: usize) callconv(.winapi) ?*anyopaque;
 extern "kernel32" fn HeapFree(h: HANDLE, flags: DWORD, mem: ?*anyopaque) callconv(.winapi) BOOL;
@@ -584,6 +1106,8 @@ extern "kernel32" fn OpenProcess(dwDesiredAccess: DWORD, bInheritHandle: BOOL, d
 extern "kernel32" fn QueryFullProcessImageNameW(hProcess: HANDLE, dwFlags: DWORD, lpExeName: [*]u16, lpdwSize: *DWORD) callconv(.winapi) BOOL;
 extern "kernel32" fn CreateThread(attr: ?*anyopaque, stack: usize, fn_: *const fn (?*anyopaque) callconv(.winapi) u32, param: ?*anyopaque, flags: u32, id: ?*u32) callconv(.winapi) ?HANDLE;
 extern "kernel32" fn CloseHandle(h: HANDLE) callconv(.winapi) BOOL;
+extern "kernel32" fn CreateMutexW(lpMutexAttributes: ?*anyopaque, bInitialOwner: BOOL, lpName: ?[*:0]const u16) callconv(.winapi) ?HANDLE;
+extern "kernel32" fn ReleaseMutex(hMutex: HANDLE) callconv(.winapi) BOOL;
 extern "kernel32" fn WaitForSingleObject(h: HANDLE, dwMilliseconds: DWORD) callconv(.winapi) DWORD;
 extern "kernel32" fn CreateEventW(lpEventAttributes: ?*anyopaque, bManualReset: BOOL, bInitialState: BOOL, lpName: ?[*:0]const u16) callconv(.winapi) ?HANDLE;
 extern "kernel32" fn SetEvent(hEvent: HANDLE) callconv(.winapi) BOOL;
@@ -599,14 +1123,14 @@ extern "kernel32" fn GetCurrentThreadId() callconv(.winapi) DWORD;
 extern "user32" fn SetWindowsHookExW(idHook: i32, lpfn: *const fn (i32, usize, isize) callconv(.winapi) isize, hmod: ?HANDLE, dwThreadId: DWORD) callconv(.winapi) ?HANDLE;
 extern "user32" fn CallNextHookEx(hhk: ?HANDLE, nCode: i32, wParam: usize, lParam: isize) callconv(.winapi) isize;
 extern "user32" fn UnhookWindowsHookEx(hhk: HANDLE) callconv(.winapi) BOOL;
-extern "user32" fn SetWinEventHook(eventMin: DWORD, eventMax: DWORD, hmodWinEventProc: ?HANDLE, pfnWinEventProc: WinEventProc, idProcess: DWORD, idThread: DWORD, dwFlags: DWORD) callconv(.winapi) ?HANDLE;
-extern "user32" fn UnhookWinEvent(hWinEventHook: HANDLE) callconv(.winapi) BOOL;
 extern "user32" fn GetMessageW(lpMsg: *MSG, hWnd: ?HANDLE, wMsgFilterMin: u32, wMsgFilterMax: u32) callconv(.winapi) i32;
 extern "user32" fn PeekMessageW(lpMsg: *MSG, hWnd: ?HANDLE, wMsgFilterMin: u32, wMsgFilterMax: u32, wRemoveMsg: u32) callconv(.winapi) BOOL;
 extern "user32" fn TranslateMessage(lpMsg: *const MSG) callconv(.winapi) BOOL;
 extern "user32" fn DispatchMessageW(lpMsg: *const MSG) callconv(.winapi) isize;
 extern "user32" fn PostThreadMessageW(idThread: DWORD, Msg: u32, wParam: usize, lParam: isize) callconv(.winapi) BOOL;
 extern "user32" fn SendInput(n: u32, inputs: [*]const u8, cbSize: i32) callconv(.winapi) u32;
+extern "user32" fn VkKeyScanW(ch: u16) callconv(.winapi) i16;
+extern "user32" fn keybd_event(vk: u8, scan: u8, flags: u32, extraInfo: usize) callconv(.winapi) void;
 extern "user32" fn MessageBoxW(hwnd: ?*anyopaque, text: [*:0]const u16, cap: [*:0]const u16, utype: u32) callconv(.winapi) i32;
 extern "user32" fn FindWindowW(lpClassName: ?[*:0]const u16, lpWindowName: ?[*:0]const u16) callconv(.winapi) ?HANDLE;
 extern "user32" fn GetForegroundWindow() callconv(.winapi) ?HANDLE;
@@ -788,6 +1312,7 @@ fn runtimeCanReclaimRetiredAllocations() bool {
         @atomicLoad(u32, &g_runtimePublishPendingMask, .acquire) == 0 and
         !g_bulkRuntimeHotkeysDirty and
         !g_bulkRuntimeModifiersDirty and
+        !g_bulkRuntimePassthroughsDirty and
         !g_bulkRuntimeContextActionsDirty and
         !g_bulkRuntimeCombosDirty and
         !g_bulkRuntimeChordsDirty and
@@ -1205,7 +1730,7 @@ const ActionType = enum(u8) { undecided = 0, tap = 1, hold = 2, modifier_used = 
 
 // ============================================================================
 // Phase 1: Precomputed keydown/keyup action classification
-// Computed during rebuildKeyGate() from static per-key facts only.
+// Computed during rebuild_runtime_vk_plan() from static per-key facts only.
 // ============================================================================
 const KeyDownAction = enum(u8) {
     fallback_slow = 0, // Slow path: may need complex processing
@@ -1236,7 +1761,8 @@ const FLAG_RELEASED: u16 = 0x0001;
 const FLAG_INTERFERING: u16 = 0x0002;
 const FLAG_COMBO_TRIG: u16 = 0x0004;
 const FLAG_MOD_PRESSED: u16 = 0x0008;
-const FLAG_IS_MOD: u16 = 0x0010;
+// Runtime state: the current VK is being treated as an active modifier.
+const RUNTIME_CURRENT_VK_IS_ACTIVE_MODIFIER: u16 = 0x0010;
 const FLAG_MOD_ACT: u16 = 0x0020;
 const FLAG_MOD_TRIG: u16 = 0x0040;
 const FLAG_COMBO_RPT: u16 = 0x0080;
@@ -1293,8 +1819,9 @@ const KeyData = struct {
     inline fn modifierPressed(self: KeyData) bool {
         return self.f(FLAG_MOD_PRESSED);
     }
-    inline fn isModifier(self: KeyData) bool {
-        return self.f(FLAG_IS_MOD);
+// Reads whether this key-data record currently treats its VK as an active modifier.
+    inline fn isRuntimeModifier(self: KeyData) bool {
+        return self.f(RUNTIME_CURRENT_VK_IS_ACTIVE_MODIFIER);
     }
     inline fn modifierActivated(self: KeyData) bool {
         return self.f(FLAG_MOD_ACT);
@@ -1375,6 +1902,14 @@ const RuntimeContextAction = struct {
 const RuntimeModifier = struct {
     vk: i32 = 0,
     modType: i8 = MOD_NONE,
+    contextKind: u8 = 7,
+    contextNegated: bool = false,
+    contextLen: u16 = 0,
+    specificityMask: u8 = 0,
+    suspendExempt: bool = false,
+};
+const RuntimePassthrough = struct {
+    vk: i32 = 0,
     contextKind: u8 = 7,
     contextNegated: bool = false,
     contextLen: u16 = 0,
@@ -1466,20 +2001,16 @@ const hotkeys = struct {
 };
 
 pub var g_hotkeyContextState: hotkeys.HotkeyContextState = .{};
-var g_nativeForegroundContextFallbackActive: i32 = 1;
-var g_nativeForegroundHook: ?HANDLE = null;
-var g_nativeForegroundFocusHook: ?HANDLE = null;
-var g_nativeForegroundNameChangeHook: ?HANDLE = null;
-var g_nativeContextMenuPopupHook: ?HANDLE = null;
-var g_nativeContextMenuObjectHook: ?HANDLE = null;
-var g_nativeForegroundHookThreadActive: i32 = 0;
-var g_nativeForegroundHookStopGeneration: i32 = 0;
-var g_nativeForegroundHookThreadId: DWORD = 0;
-var g_nativeForegroundHwnd: usize = 0;
-var g_nativeForegroundLastFocusHwnd: usize = 0;
 var g_contextMenuDigitAccessVK: [10]i32 = [_]i32{0} ** 10;
-// Compiled hotkey VK gate — true for any VK in hotkeys.HOTKEYS; built in applyPrecompiledShortcuts.
+// Registration facts used by the input hot path. These are deliberately
+// separate from the active matching gate: a contextual row may be inactive
+// in the last published context, but its VK still needs a cheap synchronous
+// foreground-context refresh before matching the current press.
 var g_compiledHotkeyGate: [256]bool = [_]bool{false} ** 256;
+// The guarded Zig suite supplies a synthetic context directly.  Keep the
+// production foreground refresh untouched, but let that suite prevent the
+// desktop's unrelated foreground window from overwriting its fixture.
+var g_testSuppressForegroundRefresh: bool = false;
 
 // --- QPC timer ---
 var g_qpcFreq: i64 = 0;
@@ -1492,6 +2023,11 @@ var g_sendCtx: InterceptionContext = null;
 var g_sendDev: InterceptionDevice = 0;
 var g_captureCtx: InterceptionContext = null;
 var g_useKernel: bool = true;
+// Global text-paste strategy selected by the AHK settings GUI.
+// 0 = interception paste, 1 = interception character send,
+// 2 = SendInput paste, 3 = SendInput Unicode characters,
+// 4 = Win32 keybd_event (SendEvent semantics) from this DLL.
+var g_pasteMode: i32 = 0;
 var g_sendModeAuto: bool = true;
 var g_profilingEnabled: bool = false; // on by default
 var g_suppressOutputForReplay: bool = false;
@@ -1653,6 +2189,7 @@ var g_runtimeHotkeysCap: usize = 0;
 var g_runtimeHotkeysLen: usize = 0;
 var g_runtimeHotkeysPublishedLen: usize = 0;
 var g_runtimeHotkeyGate: [VK_COUNT]bool = [_]bool{false} ** VK_COUNT;
+var g_runtimeContextHotkeyGate: [VK_COUNT]bool = [_]bool{false} ** VK_COUNT;
 var g_runtimeHotkeysSuspended: i32 = 0;
 var g_panicExitVK: i32 = 0;
 var g_panicExitModsRequired: u16 = 0;
@@ -1662,6 +2199,11 @@ var g_nativeReloadVK: i32 = 0;
 var g_nativeReloadModsRequired: u16 = 0;
 var g_nativeReloadModsForbidden: u16 = 0xFFFF;
 var g_nativeReloadEnabled: i32 = 0;
+var g_nativeSuspendVK: i32 = 0;
+var g_nativeSuspendModsRequired: u16 = 0;
+var g_nativeSuspendModsForbidden: u16 = 0xFFFF;
+var g_nativeSuspendEnabled: i32 = 0;
+var g_nativeSuspendKeyDown: bool = false;
 const RUNTIME_CONTEXT_ACTION_CHARS: usize = 256;
 const RUNTIME_CONTEXT_ACTION_INITIAL_CAP: usize = 1024;
 const RuntimeContextActionText = [RUNTIME_CONTEXT_ACTION_CHARS]u16;
@@ -1673,6 +2215,7 @@ var g_runtimeContextActionsCap: usize = 0;
 var g_runtimeContextActionsLen: usize = 0;
 var g_runtimeContextActionsPublishedLen: usize = 0;
 var g_runtimeHoldTouched: [VK_COUNT]bool = [_]bool{false} ** VK_COUNT;
+var g_runtimeContextActionGate: [VK_COUNT]bool = [_]bool{false} ** VK_COUNT;
 var g_runtimeDoubleTapTouched: [VK_COUNT]bool = [_]bool{false} ** VK_COUNT;
 var g_runtimeTapHoldTapTouched: [VK_COUNT]bool = [_]bool{false} ** VK_COUNT;
 var g_runtimeTapHoldHoldTouched: [VK_COUNT]bool = [_]bool{false} ** VK_COUNT;
@@ -1698,12 +2241,29 @@ var g_runtimeModifiersCap: usize = 0;
 var g_runtimeModifiersLen: usize = 0;
 var g_runtimeModifiersPublishedLen: usize = 0;
 var g_runtimeModifierTouched: [VK_COUNT]bool = [_]bool{false} ** VK_COUNT;
+var g_runtimeContextModifierGate: [VK_COUNT]bool = [_]bool{false} ** VK_COUNT;
 var g_runtimeModifierBaseType: [VK_COUNT]i8 = [_]i8{MOD_NONE} ** VK_COUNT;
 const RuntimeModifierActiveBank = struct {
     modType: [VK_COUNT]i8 = [_]i8{MOD_NONE} ** VK_COUNT,
 };
 var g_runtimeModifierActiveBanks: [2]RuntimeModifierActiveBank = .{ .{}, .{} };
 var g_activeRuntimeModifierBank: u32 = 0;
+
+const RUNTIME_PASSTHROUGH_INITIAL_CAP: usize = 128;
+var g_runtimePassthroughsEmpty: [0]RuntimePassthrough = .{};
+var g_runtimePassthroughTextsEmpty: [0]RuntimeContextActionText = .{};
+var g_runtimePassthroughs: []RuntimePassthrough = g_runtimePassthroughsEmpty[0..];
+var g_runtimePassthroughTexts: []RuntimeContextActionText = g_runtimePassthroughTextsEmpty[0..];
+var g_runtimePassthroughsCap: usize = 0;
+var g_runtimePassthroughsLen: usize = 0;
+var g_runtimePassthroughsPublishedLen: usize = 0;
+const RuntimePassthroughActiveBank = struct {
+    enabled: [VK_COUNT]bool = [_]bool{false} ** VK_COUNT,
+};
+var g_runtimePassthroughActiveBanks: [2]RuntimePassthroughActiveBank = .{ .{}, .{} };
+var g_activeRuntimePassthroughBank: u32 = 0;
+var g_bulkRuntimePassthroughsDirty: bool = false;
+var g_passthroughsPreparedSerial: u32 = 0;
 
 const RUNTIME_COMBO_CONTEXT_CHARS: usize = 256;
 const RUNTIME_COMBO_INITIAL_CAP: usize = 1024;
@@ -1734,6 +2294,10 @@ var g_runtimeChordTexts: []RuntimeChordText = g_runtimeChordTextsEmpty[0..];
 var g_runtimeChordsCap: usize = 0;
 var g_runtimeChordsLen: usize = 0;
 var g_runtimeChordsPublishedLen: usize = 0;
+// Permanent structural hint for contextual chord lookup. This is separate
+// from the active chord bank: an inactive contextual chord still needs a
+// context refresh before its candidate can be selected.
+var g_runtimeChordContextParticipant: [VK_COUNT]bool = [_]bool{false} ** VK_COUNT;
 
 const RUNTIME_MOD_BUCKET_COUNT: usize = 16;
 const RuntimeHotkeyRange = struct { start: u32 = 0, len: u32 = 0 };
@@ -2144,6 +2708,10 @@ inline fn chordHotSlotForMask(key: u64, mask: usize) usize {
 }
 inline fn chordGetFast(key: u64) ?ChordHotEntry {
     if (key == 0) return null;
+    // Structural chord identity is checked before consulting the
+    // context-filtered active chord bank, so a stale context publication
+    // cannot turn a valid contextual chord into a non-existent chord.
+    prepareStructuralChordContext(key);
     const runtime_chords = activeRuntimeChords();
     if (runtime_chords.hotTable.len != 0) {
         const runtime_mask = runtime_chords.hotTable.len - 1;
@@ -2240,13 +2808,16 @@ fn chordHotPut(entry: ChordHotEntry) bool {
     return false;
 }
 // --- Active modifiers ---
-var g_activeMods: [ACTIVE_MOD_MAX]i32 = [_]i32{0} ** ACTIVE_MOD_MAX;
-var g_activeModCount: i32 = 0;
-var g_activeModMask: u16 = 0;
-// O(1) presence test — indexed by VK. Set/cleared by activeModAdd/Remove/Clear.
+// Collection of source VKs currently active as virtual modifiers.
+var g_active_virtual_modifiers_by_vk: [ACTIVE_MOD_MAX]i32 = [_]i32{0} ** ACTIVE_MOD_MAX;
+// Number of source VKs currently active as virtual modifiers.
+var g_active_virtual_modifier_count: i32 = 0;
+// Virtual modifier-family mask currently active.
+var g_active_virtual_modifiers: u16 = 0;
+// O(1) presence test — indexed by VK. Set/cleared by add_active_virtual_modifier/Remove/Clear.
 // Replaces the O(ACTIVE_MOD_MAX) linear scan in activeModContains.
 var g_activeModPresent: [VK_COUNT]bool = [_]bool{false} ** VK_COUNT;
-// O(1) index lookup — indexed by VK. Stores index in g_activeMods array.
+// O(1) index lookup — indexed by VK. Stores index in g_active_virtual_modifiers_by_vk array.
 // Enables O(1) removal instead of O(n) linear search.
 var g_activeModIdx: [VK_COUNT]i32 = [_]i32{-1} ** VK_COUNT;
 // --- Registration presence flags (set at registration, never cleared; O(1) check) ---
@@ -2332,9 +2903,12 @@ var g_modPollDownTime: [VK_COUNT]i64 = [_]i64{0} ** VK_COUNT;
 // Per-VK QPC time of the most recent modifier release for side-specific double-tap detection.
 var g_modPollLastUpTime: [VK_COUNT]i64 = [_]i64{0} ** VK_COUNT;
 // --- Misc runtime state ---
-var g_modBitmask: i32 = 0;
-var g_physicalModMask: u16 = 0;
-var g_physicalModMaskActive: bool = false;
+// Physical and Windows-facing modifiers currently active; virtual modifiers are excluded.
+var g_active_physical_and_windows_facing_modifiers: i32 = 0;
+// Collapsed physical modifier-family mask currently active.
+var g_active_physical_modifiers: u16 = 0;
+// Cached boolean indicating whether any physical modifier is active.
+var g_any_physical_modifiers_active: bool = false;
 var g_lastKeyTime: i64 = 0;
 var g_typingMode: bool = false;
 var g_typingModeUntil: i64 = 0;
@@ -2359,13 +2933,13 @@ const RF_IGNORED_KEYS: u32 = 1 << 3; // g_ignoredKeysLen > 0
 const RF_RECENT_KEYUP: u32 = 1 << 4; // g_recentKeyUpCount > 0
 const RF_KB_NONEMPTY: u32 = 1 << 5; // g_kbLen > 0
 const RF_ORD_NONEMPTY: u32 = 1 << 6; // g_ordLen > 0
-const RF_ACTIVE_MODS: u32 = 1 << 7; // g_activeModCount > 0
+const RF_ACTIVE_MODS: u32 = 1 << 7; // g_active_virtual_modifier_count > 0
 const RF_UNREL_MODS: u32 = 1 << 8; // g_unrelModCount > 0
 const RF_PENDING_ROLL: u32 = 1 << 23; // g_pendingRollLen > 0
 const RF_PENDING_SOLO: u32 = 1 << 24; // g_pendingSoloVK != 0
 const RF_CLEAN_UNREL_MODS: u32 = 1 << 9; // g_cleanUnrelModCount > 0
-const RF_SYS_MODS: u32 = 1 << 10; // g_modBitmask != 0
-const RF_PHYSICAL_MODS: u32 = 1 << 11; // g_physicalModMask != 0
+const RF_SYS_MODS: u32 = 1 << 10; // g_active_physical_and_windows_facing_modifiers != 0
+const RF_PHYSICAL_MODS: u32 = 1 << 11; // g_active_physical_modifiers != 0
 const RF_UNREL_KEYS: u32 = 1 << 12; // g_unreleasedKeyCount > 0
 const RF_UNREL_NONMOD_KEYS: u32 = 1 << 13; // g_unreleasedNonModCount > 0
 const RF_ACTIVE_COMBO_PRIMARY: u32 = 1 << 14; // g_activeComboPrimaryCount > 0
@@ -2506,12 +3080,13 @@ var g_cleanUnrelModCount: i32 = 0;
 // combo/chord logic can remove keys from kb while they are still physically held.
 // Four u64 words cover all 256 VKs, so repeat and physical-mod checks read one
 // compact bitboard instead of a 256-byte bool table or an OS async query.
-var g_physicalKeyDownBits: [4]u64 = [_]u64{0} ** 4;
+// Active-VK bitboard: one bit per VK indicating whether that VK is physically held.
+var g_is_vk_held: [4]u64 = [_]u64{0} ** 4;
 inline fn physicalKeyDownAt(idx: usize) bool {
     if (idx >= VK_COUNT) return false;
     const word = idx >> 6;
     const bit = @as(u64, 1) << @intCast(idx & 63);
-    return (@atomicLoad(u64, &g_physicalKeyDownBits[word], .acquire) & bit) != 0;
+    return (@atomicLoad(u64, &g_is_vk_held[word], .acquire) & bit) != 0;
 }
 inline fn physicalKeyDownVK(vk: i32) bool {
     if (vk < 0 or vk >= VK_COUNT) return false;
@@ -2522,13 +3097,13 @@ inline fn setPhysicalKeyDownAt(idx: usize, is_down: bool) void {
     const word = idx >> 6;
     const bit = @as(u64, 1) << @intCast(idx & 63);
     if (is_down) {
-        _ = @atomicRmw(u64, &g_physicalKeyDownBits[word], .Or, bit, .acq_rel);
+        _ = @atomicRmw(u64, &g_is_vk_held[word], .Or, bit, .acq_rel);
     } else {
-        _ = @atomicRmw(u64, &g_physicalKeyDownBits[word], .And, ~bit, .acq_rel);
+        _ = @atomicRmw(u64, &g_is_vk_held[word], .And, ~bit, .acq_rel);
     }
 }
 inline fn clearPhysicalKeyDownState() void {
-    inline for (0..4) |i| @atomicStore(u64, &g_physicalKeyDownBits[i], 0, .release);
+    inline for (0..4) |i| @atomicStore(u64, &g_is_vk_held[i], 0, .release);
 }
 // Reserved for a future startup-held non-mod quarantine. Runtime safety is
 // currently based on exact modifier sync plus real hook/capture key events;
@@ -2547,19 +3122,26 @@ var g_runtimePublishWorkerActive: i32 = 0;
 // another key was pressed after a hold candidate went down. Autorepeat does not
 // update this value because setPhysicalKeyDownState checks was_down first.
 var g_lastPhysicalDownVK: i32 = 0;
-var g_physicalHotkeyModCounts: [4]u8 = [_]u8{0} ** 4;
-// PHYSICAL MODIFIER STATE: g_physicalKeyDownBits plus these masks describe the
+// Four counters: the number of active physical modifier keys in each category.
+var g_active_physical_modifier_key_counts_by_category: [4]u8 = [_]u8{0} ** 4;
+// PHYSICAL MODIFIER STATE: g_is_vk_held plus these masks describe the
 // user's actual physical modifier keys. Real input events update them first.
-var g_physicalHotkeyModMask: u16 = 0;
-var g_physicalHotkeyLRModMask: u8 = 0;
+// Physical modifier-family values selected for shortcut/native output.
+var g_which_physical_modifiers_to_send: u16 = 0;
+// Left/right physical modifier-key mask currently active.
+var g_lr_active_physical_modifiers: u8 = 0;
 // OS VISIBILITY: subset of physically-held LR modifiers whose DOWN Windows
 // does not currently own because QMK suppressed or neutralized it.
 // Synthetic modifier UP/DOWN events may change this mask, but must never change
 // physical truth. Invariant: hiddenFromOsLR is a subset of physicalHeldLR.
-var g_physicalModHiddenFromOsLRMask: u8 = 0;
+// Left/right physical modifier VKs currently hidden from Windows.
+var g_physical_modifier_hidden_from_os_lr_mask: u8 = 0;
 // HOTKEY OWNERSHIP: suppress-original hotkey trigger DOWN/UP pairing only.
 // Unrelated to general modifier OS visibility.
-var g_hotkeyConsumedDown: [VK_COUNT]bool = [_]bool{false} ** VK_COUNT;
+// VKs whose original key-down was consumed and whose key-up must remain paired.
+var g_hotkey_consumed_down: [VK_COUNT]bool = [_]bool{false} ** VK_COUNT;
+// Compiled ordinary holds use the shared runtime bank, but an in-flight press
+// must keep the callback selected at key-down if the foreground context changes.
 var g_contextualTapArmed: [VK_COUNT]bool = [_]bool{false} ** VK_COUNT;
 var g_contextualTapCallbackId: [VK_COUNT]i32 = [_]i32{-1} ** VK_COUNT;
 var g_contextualTapHoldCallbackId: [VK_COUNT]i32 = [_]i32{-1} ** VK_COUNT;
@@ -2569,7 +3151,8 @@ var g_contextualTapDownTime: [VK_COUNT]i64 = [_]i64{0} ** VK_COUNT;
 // A non-modifier key passed through as a native stroke because a physical
 // modifier was held. Its keyup must also be passed through natively, even if
 // the modifier is released first.
-var g_nativePassthroughDown: [VK_COUNT]bool = [_]bool{false} ** VK_COUNT;
+// VKs whose key-down was forwarded natively to Windows and whose key-up must be paired.
+var g_native_passthrough_to_windows: [VK_COUNT]bool = [_]bool{false} ** VK_COUNT;
 // Four u64 words cover all 256 Windows VK values. The active bank contains
 // only keys that can match in the current context, including permanent globals.
 var g_hotkeyActiveGateBanks: [2][4]u64 = [_][4]u64{[_]u64{0} ** 4} ** 2;
@@ -2590,7 +3173,7 @@ var g_tapHoldArmedHoldCallbackId: [VK_COUNT]i32 = [_]i32{-1} ** VK_COUNT;
 var g_tapHoldArmedCleanupCallbackId: [VK_COUNT]i32 = [_]i32{-1} ** VK_COUNT;
 var g_tapHoldArmedThreshold: [VK_COUNT]i64 = [_]i64{0} ** VK_COUNT;
 var g_activeModKeyCnt: i32 = 0;
-// Set true by kbRemove when g_activeModCount > 0; cleared by processQueue
+// Set true by kbRemove when g_active_virtual_modifier_count > 0; cleared by processQueue
 // after the stale-modifier sweep. Lets processQueue skip the sweep on the
 // vast majority of calls where nothing has changed.
 var g_modStackDirty: bool = false;
@@ -2609,7 +3192,8 @@ var g_RepeatIntervalTicks: i64 = 0;
 // Physical modifier passthrough controls whether real Ctrl/Alt/Shift/Win
 // strokes are exposed to Windows when no QMK hotkey consumes them. Physical
 // bitboards remain authoritative either way.
-var g_physicalModifierPassthrough: bool = true;
+// Controls whether unconsumed physical modifiers remain visible to Windows.
+var g_physical_modifier_passthrough: bool = true;
 
 // --- SendInput ring buffer ---
 // Typed struct matches x86_64 Windows INPUT ABI exactly (40 bytes).
@@ -2705,6 +3289,8 @@ const ClipboardFormatBackup = struct {
 var g_hotstringClipboardBackup: [MAX_CLIPBOARD_FORMAT_BACKUPS]ClipboardFormatBackup = [_]ClipboardFormatBackup{.{}} ** MAX_CLIPBOARD_FORMAT_BACKUPS;
 var g_hotstringClipboardBackupLen: usize = 0;
 var g_hotstringClipboardRestoreGeneration: u32 = 0;
+var g_clipboardMutex: ?HANDLE = null;
+var g_clipboardOwnerHwnd: ?HANDLE = null;
 var g_hotstringCallbackNameWide: [512]u16 = [_]u16{0} ** 512;
 var g_shortcutTextWide: [512]u16 = [_]u16{0} ** 512;
 
@@ -2721,16 +3307,20 @@ fn shortcutTextWide(text: []const u8) [*:0]const u16 {
 const PRECOMPILED_CALLBACK_NAME_BYTES: usize = 0;
 
 inline fn hotstringCallbackIndex(source_index: usize) i64 {
-    _ = source_index;
-    return ipc.IPC_NOOP;
+    const callback_id: i32 = -@as(i32, @intCast(source_index)) - 1;
+    return if (isCompiledZigCallbackId(callback_id)) callback_id else ipc.IPC_NOOP;
 }
 
 inline fn hotkeyCallbackIndex(source_index: usize) i64 {
-    _ = source_index;
-    return ipc.IPC_NOOP;
+    const callback_id: i32 = @intCast(source_index);
+    return if (isCompiledZigCallbackId(callback_id)) callback_id else ipc.IPC_NOOP;
 }
 
 inline fn shortcutCallbackIndex(callbackType: i32, callbackId: i32) i64 {
+    // Compiled AHK callbacks use a reserved negative ID domain.  Preserve
+    // that ID through IPC so AHK can resolve it in the generated callback
+    // map.  Only legacy runtime callback encodings are filtered below.
+    if (isCompiledZigCallbackId(callbackId)) return callbackId;
     if (callbackId >= 0) return callbackId;
     const callback_base: i32 = if (callbackType == 0 or callbackType == 6) 2 else 1;
     const index_i32 = -callbackId - callback_base;
@@ -2753,15 +3343,24 @@ var g_strokeVKCache: [512]i16 = [_]i16{-1} ** 512;
 // ============================================================================
 
 // KeyGate property bits (static semantic properties)
-const KP_IS_MODIFIER: u32 = 1 << 0;
-const KP_HAS_HOLD: u32 = 1 << 1;
-const KP_IS_COMBO_PRIMARY: u32 = 1 << 2;
-const KP_IS_INSTANT_PRIMARY: u32 = 1 << 3;
-const KP_CAN_COMBO_SECONDARY: u32 = 1 << 4;
-const KP_CAN_INSTANT_SECONDARY: u32 = 1 << 5;
-const KP_CAN_CHORD: u32 = 1 << 6;
-const KP_IS_SYS_MOD: u32 = 1 << 7;
-const KP_IS_PHYS_MOD: u32 = 1 << 8;
+// Static property: this VK has a virtual modifier role.
+const KP_HAS_VIRTUAL_MODIFIER_ROLE: u32 = 1 << 0;
+// Static property: this VK has a hold callback.
+const KP_HAS_HOLD_CALLBACK: u32 = 1 << 1;
+// Static property: this VK can be a combo primary.
+const KP_CAN_BE_COMBO_PRIMARY: u32 = 1 << 2;
+// Static property: this VK can be an instant combo primary.
+const KP_CAN_BE_INSTANT_COMBO_PRIMARY: u32 = 1 << 3;
+// Static property: this VK can be a combo secondary.
+const KP_CAN_BE_COMBO_SECONDARY: u32 = 1 << 4;
+// Static property: this VK can be an instant combo secondary.
+const KP_CAN_BE_INSTANT_COMBO_SECONDARY: u32 = 1 << 5;
+// Static property: this VK can participate in a chord.
+const KP_CAN_PARTICIPATE_IN_CHORD: u32 = 1 << 6;
+// Static property: this VK participates in Windows-facing modifier processing.
+const KP_IS_WINDOWS_FACING_MODIFIER: u32 = 1 << 7;
+// Static property: this VK updates physical modifier state.
+const KP_IS_PHYSICAL_MODIFIER: u32 = 1 << 8;
 const KP_CAN_DOUBLE_TAP: u32 = 1 << 9;
 
 // Keydown section mask bits
@@ -2813,14 +3412,15 @@ const KDP_PRIMARY_TAPLIKE_DOWN: u32 = 1 << 13;
 // KDP_NEEDS_ACTIVE_PRIMARY_SYNC: gates the active-primary sync path on keydown.
 // True only for keys that can actually require active-primary tracking.
 const KDP_NEEDS_ACTIVE_PRIMARY_SYNC: u32 = 1 << 14;
-const KDP_IS_MODIFIER: u32 = 1 << 15;
+// Derived key-down plan state: this VK has a virtual modifier role.
+const KDP_HAS_VIRTUAL_MODIFIER_ROLE: u32 = 1 << 15;
 const KDP_IS_COMBO_PRIMARY: u32 = 1 << 16;
 const KDP_IS_INSTANT_PRIMARY: u32 = 1 << 17;
 const KDP_MODTYPE_SHIFT: u5 = 18;
 const KDP_MODTYPE_MASK: u32 = 0x7 << KDP_MODTYPE_SHIFT;
 
 inline fn modTypeFromKdPlan(kdPlan: u32) i8 {
-    return if ((kdPlan & KDP_IS_MODIFIER) != 0)
+    return if ((kdPlan & KDP_HAS_VIRTUAL_MODIFIER_ROLE) != 0)
         @intCast((kdPlan & KDP_MODTYPE_MASK) >> KDP_MODTYPE_SHIFT)
     else
         MOD_NONE;
@@ -2852,7 +3452,7 @@ const KU_NEEDS_ACTIVE_PRIMARY_SYNC: u32 = 1 << 14;
 
 // ============================================================================
 // Key scan flags (KFS): per-key static scan eligibility bitmask
-// Precomputed in rebuildKeyGate from static per-key facts only.
+// Precomputed in rebuild_runtime_vk_plan from static per-key facts only.
 // Used to pre-gate static portions of hot if-statements before scan-heavy blocks.
 // ============================================================================
 const KFS_KD_RELATION_CHECK: u16 = 1 << 0;
@@ -2866,7 +3466,8 @@ const KFS_PQ_PREFIX_SCAN: u16 = 1 << 7;
 
 // Precomputed per-key decisions used in processQueue to replace firstProps derivation.
 // ============================================================================
-const PQP_IS_MODIFIER: u32 = 1 << 0; // key can act as a homerow modifier
+// Pending-queue plan state: this VK has a virtual modifier role.
+const PQP_HAS_VIRTUAL_MODIFIER_ROLE: u32 = 1 << 0; // key can act as a homerow modifier
 const PQP_HAS_HOLD: u32 = 1 << 1; // key has a hold callback
 const PQP_CAN_COMBO_SECONDARY: u32 = 1 << 2; // key can be blocked waiting for a combo primary
 const PQP_CAN_INSTANT_SECONDARY: u32 = 1 << 3; // key can be blocked waiting for an instant primary
@@ -2878,7 +3479,7 @@ const PQP_PLAIN_NO_HOLD: u32 = 1 << 4;
 // Keeps behavior unchanged; only enables more precise branching.
 
 // Key can enter the modifier-activated/triggered resolution block.
-// Equivalent to PQP_IS_MODIFIER but named for the branch it guards.
+// Equivalent to PQP_HAS_VIRTUAL_MODIFIER_ROLE but named for the branch it guards.
 const PQP_NEEDS_MODIFIER_RESOLVE: u32 = 1 << 5;
 
 // Key may need to wait on older unreleased keys before it can resolve.
@@ -2903,7 +3504,7 @@ const PQP_FAST_EMIT_TAP: u32 = 1 << 9;
 const PQP_NEEDS_SLOW_RESOLVE: u32 = 1 << 10;
 
 // Parallel plan array for processQueue — same index space as g_keyGate.
-// Written once per rebuildKeyGate(), read-only on the hot path.
+// Written once per rebuild_runtime_vk_plan(), read-only on the hot path.
 var g_keyQueuePlan: [VK_COUNT]u32 = [_]u32{0} ** VK_COUNT;
 
 const FastPathCounters = extern struct {
@@ -2993,15 +3594,25 @@ inline fn activeContextDerived() *const ContextDerivedBank {
 var g_keyScanFlags: [VK_COUNT]u16 align(64) = [_]u16{0} ** VK_COUNT;
 
 // Cold direct tables — avoid function-call indirection on hot path
-var g_keyModType: [VK_COUNT]i8 align(64) = [_]i8{MOD_NONE} ** VK_COUNT;
-var g_keySysBit: [VK_COUNT]u8 align(64) = [_]u8{0} ** VK_COUNT;
-var g_keyPhysBit: [VK_COUNT]u8 align(64) = [_]u8{0} ** VK_COUNT;
-var g_keyModMask: [VK_COUNT]u8 align(64) = [_]u8{0} ** VK_COUNT;
-var g_keyModVK: [VK_COUNT]u16 align(64) = [_]u16{0} ** VK_COUNT;
+// Virtual modifier role metadata assigned to each VK.
+var g_vk_modifier_roles: [VK_COUNT]i8 align(64) = [_]i8{MOD_NONE} ** VK_COUNT;
+// Windows-facing modifier-family values assigned to each VK.
+var g_vk_windows_facing_modifiers: [VK_COUNT]u8 align(64) = [_]u8{0} ** VK_COUNT;
+// Physical modifier-family bit assigned to each recognized physical modifier VK.
+var g_vk_is_physical_modifier: [VK_COUNT]u8 align(64) = [_]u8{0} ** VK_COUNT;
+// Virtual modifier-family mask produced by each key VK.
+var g_key_virtual_modifier_mask: [VK_COUNT]u8 align(64) = [_]u8{0} ** VK_COUNT;
+// Output VK produced by each virtual modifier role.
+var g_virtual_modifier_output_vk: [VK_COUNT]u16 align(64) = [_]u16{0} ** VK_COUNT;
 var g_keyModPrefix: [VK_COUNT]u16 align(64) = [_]u16{0} ** VK_COUNT;
 var g_keyNamePtr: [VK_COUNT]?*const [KN_LEN]u16 align(64) = [_]?*const [KN_LEN]u16{null} ** VK_COUNT;
 var g_keyHoldCallbackId: [VK_COUNT]i32 align(64) = [_]i32{-1} ** VK_COUNT;
 var g_keyDoubleTapCallbackId: [VK_COUNT]i32 align(64) = [_]i32{-1} ** VK_COUNT;
+// A hold is one logical action for one physical press.  Several resolver
+// paths can converge on the same press (the normal queue drain and the
+// key-up fast path); keep the IPC emission at one shared choke point so a
+// compiled callback cannot be delivered twice.
+var g_holdCallbackQueued: [VK_COUNT]bool = [_]bool{false} ** VK_COUNT;
 var g_hotWarmSink: u64 = 0;
 
 // Combo bitset gates: which active primaries can combo with this secondary?
@@ -3196,7 +3807,7 @@ inline fn markKeyReleased(vk: i32, kd: *KeyData) void {
     kd.sf(FLAG_RELEASED);
     if (g_unreleasedKeyCount > 0) g_unreleasedKeyCount -= 1;
     _ = vk;
-    if (!kd.isModifier() and g_unreleasedNonModCount > 0) g_unreleasedNonModCount -= 1;
+    if (!kd.isRuntimeModifier() and g_unreleasedNonModCount > 0) g_unreleasedNonModCount -= 1;
     rfSetIf(RF_UNREL_KEYS, g_unreleasedKeyCount != 0);
     rfSetIf(RF_UNREL_NONMOD_KEYS, g_unreleasedNonModCount != 0);
 }
@@ -3206,7 +3817,7 @@ var g_keyGateDirty: bool = true;
 // Called at the end of every registration function (setup path, never hot path).
 // Rebuilds immediately so the gate is always fresh by the time any keystroke arrives.
 inline fn markKeyGateDirty() void {
-    rebuildKeyGate();
+    rebuild_runtime_vk_plan();
     g_keyGateDirty = false;
 }
 
@@ -3217,7 +3828,7 @@ inline fn markKeyGateDirty() void {
 inline fn ensureKeyGateFresh() void {
     if (g_keyGateDirty) {
         @branchHint(.unlikely);
-        rebuildKeyGate();
+        rebuild_runtime_vk_plan();
         g_keyGateDirty = false;
     }
 }
@@ -3241,11 +3852,11 @@ fn warmHotTables() void {
         s +%= g_keyScanFlags[i];
         s +%= g_keyQueuePlan[i];
         s +%= g_scPacked[i];
-        s +%= @as(u64, @intCast(@as(i32, g_keyModType[i]) + 128));
-        s +%= g_keySysBit[i];
-        s +%= g_keyPhysBit[i];
-        s +%= g_keyModMask[i];
-        s +%= g_keyModVK[i];
+        s +%= @as(u64, @intCast(@as(i32, g_vk_modifier_roles[i]) + 128));
+        s +%= g_vk_windows_facing_modifiers[i];
+        s +%= g_vk_is_physical_modifier[i];
+        s +%= g_key_virtual_modifier_mask[i];
+        s +%= g_virtual_modifier_output_vk[i];
         s +%= g_keyModPrefix[i];
         if (g_keyNamePtr[i] != null) s +%= 1;
         if (g_keyHoldCallbackId[i] >= 0) s +%= @intCast(g_keyHoldCallbackId[i]);
@@ -3254,7 +3865,8 @@ fn warmHotTables() void {
     g_hotWarmSink +%= s;
 }
 
-fn rebuildKeyGate() void {
+// Rebuilds the derived runtime VK plan from static VK facts.
+fn rebuild_runtime_vk_plan() void {
     // Snapshot each already-published runtime overlay once. Context rebuilds are
     // cold-path work; avoid thousands of redundant atomic index loads while
     // constructing the next derived gate.
@@ -3317,8 +3929,18 @@ fn rebuildKeyGate() void {
         tmpKeyPhysBit[vi] = @truncate(g_physModBitTable[vi]);
         const regIdx = g_vkToRegIdx[vi];
         if (regIdx >= 0) tmpKeyNamePtr[vi] = &g_keyNames[@intCast(regIdx)];
-        tmpKeyHoldCallbackId[vi] = if (runtime_actions.hold[vi] >= 0) runtime_actions.hold[vi] else g_hcFlat[vi];
-        tmpKeyDoubleTapCallbackId[vi] = if (runtime_actions.doubleTap[vi] >= 0) runtime_actions.doubleTap[vi] else g_modDtFlat[vi];
+        // Compiled callbacks use the reserved negative Zig-callback range.
+        // They are still real callbacks and must participate in key-gate
+        // construction; checking only >= 0 silently drops compiled holds and
+        // double-taps before the queue path can ever see them.
+        tmpKeyHoldCallbackId[vi] = if (runtime_actions.hold[vi] >= 0 or isCompiledZigCallbackId(runtime_actions.hold[vi]))
+            runtime_actions.hold[vi]
+        else
+            g_hcFlat[vi];
+        tmpKeyDoubleTapCallbackId[vi] = if (runtime_actions.doubleTap[vi] >= 0 or isCompiledZigCallbackId(runtime_actions.doubleTap[vi]))
+            runtime_actions.doubleTap[vi]
+        else
+            g_modDtFlat[vi];
 
         var props: u32 = 0;
         var kdMask: u32 = 0;
@@ -3326,21 +3948,21 @@ fn rebuildKeyGate() void {
 
         // Physical modifier
         if (g_physModBitTable[vi] != 0) {
-            props |= KP_IS_PHYS_MOD;
+            props |= KP_IS_PHYSICAL_MODIFIER;
             kdMask |= KD_PHYS_MOD;
             kuMask |= KU_PHYS_MOD;
         }
 
         // System modifier
         if (sb != 0) {
-            props |= KP_IS_SYS_MOD;
+            props |= KP_IS_WINDOWS_FACING_MODIFIER;
             kdMask |= KD_SYS_MOD;
             kuMask |= KU_SYS_MOD;
         }
 
         // Homerow modifier
         if (mt != MOD_NONE) {
-            props |= KP_IS_MODIFIER;
+            props |= KP_HAS_VIRTUAL_MODIFIER_ROLE;
             kdMask |= KD_SAME_MOD;
             kuMask |= KU_MODIFIER_LOGIC | KU_SAME_MOD;
         }
@@ -3348,25 +3970,25 @@ fn rebuildKeyGate() void {
         // Hold/double-tap capability is armed from the effective callback. A
         // context-specific registration that is currently inactive must not
         // keep the key on the hold/double-tap path.
-        if (tmpKeyHoldCallbackId[vi] >= 0) {
-            props |= KP_HAS_HOLD;
+        if (tmpKeyHoldCallbackId[vi] >= 0 or isCompiledZigCallbackId(tmpKeyHoldCallbackId[vi])) {
+            props |= KP_HAS_HOLD_CALLBACK;
             kuMask |= KU_HOLD;
         }
 
-        if (tmpKeyDoubleTapCallbackId[vi] >= 0) {
+        if (tmpKeyDoubleTapCallbackId[vi] >= 0 or isCompiledZigCallbackId(tmpKeyDoubleTapCallbackId[vi])) {
             props |= KP_CAN_DOUBLE_TAP;
         }
 
         // Combo primary
         if (g_comboPrimaryFlat[vi] or runtime_combos.comboPrimary[vi]) {
-            props |= KP_IS_COMBO_PRIMARY;
+            props |= KP_CAN_BE_COMBO_PRIMARY;
             kuMask |= KU_COMBO_PRIMARY;
             kuMask |= KU_NEEDS_ACTIVE_PRIMARY_SYNC;
         }
 
         // Instant primary
         if (g_instantComboPrimaryFlat[vi] or runtime_combos.instantPrimary[vi]) {
-            props |= KP_IS_INSTANT_PRIMARY;
+            props |= KP_CAN_BE_INSTANT_COMBO_PRIMARY;
             kuMask |= KU_INSTANT_PRIMARY;
             kuMask |= KU_NEEDS_ACTIVE_PRIMARY_SYNC;
         }
@@ -3376,7 +3998,7 @@ fn rebuildKeyGate() void {
             if (g_comboMatrix[pi][vi] or runtime_combos.comboMatrix[pi][vi]) {
                 tmpPairRelationMask[pi][vi] |= REL_COMBO;
                 tmpPairRelationMask[vi][pi] |= REL_COMBO;
-                props |= KP_CAN_COMBO_SECONDARY;
+                props |= KP_CAN_BE_COMBO_SECONDARY;
                 kdMask |= KD_COMBO_SECONDARY;
                 kuMask |= KU_COMBO_SECONDARY;
                 const pvi: i32 = @intCast(pi);
@@ -3388,7 +4010,7 @@ fn rebuildKeyGate() void {
             if (g_instantComboMatrix[pi][vi] or runtime_combos.instantMatrix[pi][vi]) {
                 tmpPairRelationMask[pi][vi] |= REL_INSTANT;
                 tmpPairRelationMask[vi][pi] |= REL_INSTANT;
-                props |= KP_CAN_INSTANT_SECONDARY;
+                props |= KP_CAN_BE_INSTANT_COMBO_SECONDARY;
                 kdMask |= KD_INSTANT_SECONDARY;
                 kuMask |= KU_INSTANT_SECONDARY;
                 const pvi: i32 = @intCast(pi);
@@ -3401,48 +4023,48 @@ fn rebuildKeyGate() void {
 
         // Chord participant — use precise per-VK table (not "any chord + registered")
         if (g_chordParticipantFlat[vi] or runtime_chords.participant[vi]) {
-            props |= KP_CAN_CHORD;
+            props |= KP_CAN_PARTICIPATE_IN_CHORD;
             kdMask |= KD_CHORD;
         }
 
         // Contamination/retro-mod eligibility is for normal incoming keys, not
         // only configured modifiers/secondaries. Keep this broad so plain keys
         // still interact with undecided/retro modifier state.
-        if ((props & (KP_IS_SYS_MOD | KP_IS_PHYS_MOD)) == 0) {
+        if ((props & (KP_IS_WINDOWS_FACING_MODIFIER | KP_IS_PHYSICAL_MODIFIER)) == 0) {
             kuMask |= KU_RETRO_TIMER;
             kdMask |= KD_DOUBLE_TAP;
             kuMask |= KU_DOUBLE_TAP;
-            if ((props & KP_IS_MODIFIER) == 0) {
+            if ((props & KP_HAS_VIRTUAL_MODIFIER_ROLE) == 0) {
                 kdMask |= KD_MOD_CONTAMINATION;
             }
         }
 
-        if ((props & (KP_IS_PHYS_MOD |
-            KP_IS_SYS_MOD |
-            KP_IS_MODIFIER |
-            KP_CAN_COMBO_SECONDARY |
-            KP_CAN_INSTANT_SECONDARY |
-            KP_CAN_CHORD)) == 0)
+        if ((props & (KP_IS_PHYSICAL_MODIFIER |
+            KP_IS_WINDOWS_FACING_MODIFIER |
+            KP_HAS_VIRTUAL_MODIFIER_ROLE |
+            KP_CAN_BE_COMBO_SECONDARY |
+            KP_CAN_BE_INSTANT_COMBO_SECONDARY |
+            KP_CAN_PARTICIPATE_IN_CHORD)) == 0)
         {
             kdMask |= KD_PLAIN_BUFFER;
         }
 
-        if ((props & (KP_HAS_HOLD | KP_IS_COMBO_PRIMARY | KP_IS_INSTANT_PRIMARY)) == 0) {
+        if ((props & (KP_HAS_HOLD_CALLBACK | KP_CAN_BE_COMBO_PRIMARY | KP_CAN_BE_INSTANT_COMBO_PRIMARY)) == 0) {
             kuMask |= KU_FAST_TAP_PLAIN;
         }
 
         // Strict structural skip-all key-up eligibility.
         // Do NOT block on KU_RETRO_TIMER / KU_RETRO_MOD_ACT here; those are broad
         // runtime-capability paths. Runtime modifier state is checked in bufferKeyUp.
-        if ((props & (KP_HAS_HOLD |
-            KP_IS_MODIFIER |
-            KP_IS_PHYS_MOD |
-            KP_IS_SYS_MOD |
-            KP_IS_COMBO_PRIMARY |
-            KP_IS_INSTANT_PRIMARY |
-            KP_CAN_COMBO_SECONDARY |
-            KP_CAN_INSTANT_SECONDARY |
-            KP_CAN_CHORD)) == 0)
+        if ((props & (KP_HAS_HOLD_CALLBACK |
+            KP_HAS_VIRTUAL_MODIFIER_ROLE |
+            KP_IS_PHYSICAL_MODIFIER |
+            KP_IS_WINDOWS_FACING_MODIFIER |
+            KP_CAN_BE_COMBO_PRIMARY |
+            KP_CAN_BE_INSTANT_COMBO_PRIMARY |
+            KP_CAN_BE_COMBO_SECONDARY |
+            KP_CAN_BE_INSTANT_COMBO_SECONDARY |
+            KP_CAN_PARTICIPATE_IN_CHORD)) == 0)
         {
             kuMask |= KU_SKIP_ALL_BUFFER_UP;
         }
@@ -3450,50 +4072,50 @@ fn rebuildKeyGate() void {
         // KD_HELD_MOD: gates the "HELD PAST THRESHOLD" buffer scan.
         // Enter only for keys that are homerow modifiers OR can be combo/instant
         // secondaries.  Plain typing keys can never activate that path.
-        if ((props & (KP_IS_MODIFIER | KP_CAN_COMBO_SECONDARY | KP_CAN_INSTANT_SECONDARY)) != 0) {
+        if ((props & (KP_HAS_VIRTUAL_MODIFIER_ROLE | KP_CAN_BE_COMBO_SECONDARY | KP_CAN_BE_INSTANT_COMBO_SECONDARY)) != 0) {
             kdMask |= KD_HELD_MOD;
         }
 
         // KD_INTENTIONAL_CHORD: gates the "2+ clean mods + incoming key" shortcut path.
         // Every key that is NOT a physical or system modifier can be a chord trigger.
-        if ((props & (KP_IS_PHYS_MOD | KP_IS_SYS_MOD)) == 0) {
+        if ((props & (KP_IS_PHYSICAL_MODIFIER | KP_IS_WINDOWS_FACING_MODIFIER)) == 0) {
             kdMask |= KD_INTENTIONAL_CHORD;
         }
 
         // KU_RETRO_MOD_ACT: gates the retroactive modifier-activation scan on key-up.
         // Only keys that are not themselves modifiers/phys-mods/sys-mods and are not
         // already handled by a dedicated combo secondary path need this scan.
-        if ((props & (KP_IS_MODIFIER | KP_IS_PHYS_MOD | KP_IS_SYS_MOD)) == 0) {
+        if ((props & (KP_HAS_VIRTUAL_MODIFIER_ROLE | KP_IS_PHYSICAL_MODIFIER | KP_IS_WINDOWS_FACING_MODIFIER)) == 0) {
             kuMask |= KU_RETRO_MOD_ACT;
         }
 
         // Phase 1: Compute KeyDownAction classification from static properties.
         // Only uses static per-key facts; no runtime state.
-        const isTaplikeDown = (props & (KP_IS_MODIFIER |
-            KP_HAS_HOLD |
-            KP_IS_PHYS_MOD |
-            KP_IS_SYS_MOD |
-            KP_CAN_COMBO_SECONDARY |
-            KP_CAN_INSTANT_SECONDARY |
-            KP_CAN_CHORD |
+        const isTaplikeDown = (props & (KP_HAS_VIRTUAL_MODIFIER_ROLE |
+            KP_HAS_HOLD_CALLBACK |
+            KP_IS_PHYSICAL_MODIFIER |
+            KP_IS_WINDOWS_FACING_MODIFIER |
+            KP_CAN_BE_COMBO_SECONDARY |
+            KP_CAN_BE_INSTANT_COMBO_SECONDARY |
+            KP_CAN_PARTICIPATE_IN_CHORD |
             KP_CAN_DOUBLE_TAP)) == 0;
         const isPrimaryTaplikeDown = isTaplikeDown and
-            (props & (KP_IS_COMBO_PRIMARY | KP_IS_INSTANT_PRIMARY)) != 0;
+            (props & (KP_CAN_BE_COMBO_PRIMARY | KP_CAN_BE_INSTANT_COMBO_PRIMARY)) != 0;
 
         var kdAction: KeyDownAction = .fallback_slow;
-        if ((props & KP_IS_PHYS_MOD) != 0) {
+        if ((props & KP_IS_PHYSICAL_MODIFIER) != 0) {
             kdAction = .phys_mod;
-        } else if ((props & KP_IS_SYS_MOD) != 0) {
+        } else if ((props & KP_IS_WINDOWS_FACING_MODIFIER) != 0) {
             kdAction = .sys_mod;
-        } else if ((props & (KP_IS_MODIFIER |
-            KP_HAS_HOLD |
-            KP_IS_PHYS_MOD |
-            KP_IS_SYS_MOD |
-            KP_IS_COMBO_PRIMARY |
-            KP_IS_INSTANT_PRIMARY |
-            KP_CAN_COMBO_SECONDARY |
-            KP_CAN_INSTANT_SECONDARY |
-            KP_CAN_CHORD |
+        } else if ((props & (KP_HAS_VIRTUAL_MODIFIER_ROLE |
+            KP_HAS_HOLD_CALLBACK |
+            KP_IS_PHYSICAL_MODIFIER |
+            KP_IS_WINDOWS_FACING_MODIFIER |
+            KP_CAN_BE_COMBO_PRIMARY |
+            KP_CAN_BE_INSTANT_COMBO_PRIMARY |
+            KP_CAN_BE_COMBO_SECONDARY |
+            KP_CAN_BE_INSTANT_COMBO_SECONDARY |
+            KP_CAN_PARTICIPATE_IN_CHORD |
             KP_CAN_DOUBLE_TAP)) == 0)
         {
             // Strict plain: no modifier, hold, primary/secondary, chord, or double-tap roles.
@@ -3504,24 +4126,24 @@ fn rebuildKeyGate() void {
         }
         // Phase 1: Compute KeyUpAction classification from static properties.
         var kuAction: KeyUpAction = .fallback_slow;
-        if ((props & KP_IS_PHYS_MOD) != 0) {
+        if ((props & KP_IS_PHYSICAL_MODIFIER) != 0) {
             kuAction = .phys_mod_up;
-        } else if ((props & KP_IS_SYS_MOD) != 0) {
+        } else if ((props & KP_IS_WINDOWS_FACING_MODIFIER) != 0) {
             kuAction = .sys_mod_up;
-        } else if ((props & (KP_IS_MODIFIER |
-            KP_HAS_HOLD |
-            KP_IS_PHYS_MOD |
-            KP_IS_SYS_MOD |
-            KP_IS_COMBO_PRIMARY |
-            KP_IS_INSTANT_PRIMARY |
-            KP_CAN_COMBO_SECONDARY |
-            KP_CAN_INSTANT_SECONDARY |
-            KP_CAN_CHORD |
+        } else if ((props & (KP_HAS_VIRTUAL_MODIFIER_ROLE |
+            KP_HAS_HOLD_CALLBACK |
+            KP_IS_PHYSICAL_MODIFIER |
+            KP_IS_WINDOWS_FACING_MODIFIER |
+            KP_CAN_BE_COMBO_PRIMARY |
+            KP_CAN_BE_INSTANT_COMBO_PRIMARY |
+            KP_CAN_BE_COMBO_SECONDARY |
+            KP_CAN_BE_INSTANT_COMBO_SECONDARY |
+            KP_CAN_PARTICIPATE_IN_CHORD |
             KP_CAN_DOUBLE_TAP)) == 0)
         {
             // Plain key with no structural cleanup complexity.
             kuAction = .idle_unbuffered_noop_candidate;
-        } else if ((props & KP_CAN_DOUBLE_TAP) != 0 or (props & (KP_IS_COMBO_PRIMARY | KP_IS_INSTANT_PRIMARY)) != 0) {
+        } else if ((props & KP_CAN_DOUBLE_TAP) != 0 or (props & (KP_CAN_BE_COMBO_PRIMARY | KP_CAN_BE_INSTANT_COMBO_PRIMARY)) != 0) {
             // May need repeat logic
             kuAction = .repeat_stop_candidate;
         }
@@ -3529,8 +4151,8 @@ fn rebuildKeyGate() void {
         if ((kdMask & KD_PLAIN_BUFFER) != 0) {
             kdPlan |= KDP_PLAIN | KDP_SKIP_ALL_BUFFER_DOWN;
         }
-        if ((props & KP_IS_MODIFIER) != 0) {
-            kdPlan |= KDP_IS_MODIFIER | (@as(u32, @intCast(mt)) << KDP_MODTYPE_SHIFT);
+        if ((props & KP_HAS_VIRTUAL_MODIFIER_ROLE) != 0) {
+            kdPlan |= KDP_HAS_VIRTUAL_MODIFIER_ROLE | (@as(u32, @intCast(mt)) << KDP_MODTYPE_SHIFT);
         }
         if ((kdMask & KD_PHYS_MOD) != 0) kdPlan |= KDP_PHYS_MOD;
         if ((kdMask & KD_SYS_MOD) != 0) kdPlan |= KDP_SYS_MOD;
@@ -3544,20 +4166,20 @@ fn rebuildKeyGate() void {
         if ((kdMask & KD_SAME_MOD) != 0) kdPlan |= KDP_SAME_MOD;
         if (isTaplikeDown) kdPlan |= KDP_TAPLIKE_DOWN;
         if (isPrimaryTaplikeDown) kdPlan |= KDP_PRIMARY_TAPLIKE_DOWN;
-        if ((props & KP_IS_COMBO_PRIMARY) != 0) kdPlan |= KDP_IS_COMBO_PRIMARY;
-        if ((props & KP_IS_INSTANT_PRIMARY) != 0) kdPlan |= KDP_IS_INSTANT_PRIMARY;
+        if ((props & KP_CAN_BE_COMBO_PRIMARY) != 0) kdPlan |= KDP_IS_COMBO_PRIMARY;
+        if ((props & KP_CAN_BE_INSTANT_COMBO_PRIMARY) != 0) kdPlan |= KDP_IS_INSTANT_PRIMARY;
         if ((kdPlan & (KDP_IS_COMBO_PRIMARY | KDP_IS_INSTANT_PRIMARY)) != 0)
             kdPlan |= KDP_NEEDS_ACTIVE_PRIMARY_SYNC;
 
         var scanFlags: u16 = 0;
-        if ((props & (KP_CAN_COMBO_SECONDARY | KP_CAN_INSTANT_SECONDARY)) != 0) scanFlags |= KFS_KD_RELATION_CHECK;
-        if ((props & KP_CAN_CHORD) != 0) scanFlags |= KFS_KD_CHORD_CHECK;
-        if ((props & (KP_IS_PHYS_MOD | KP_IS_SYS_MOD)) == 0) scanFlags |= KFS_KD_INTENTIONAL_CHORD;
-        if ((props & (KP_CAN_COMBO_SECONDARY | KP_CAN_INSTANT_SECONDARY)) != 0) scanFlags |= KFS_KU_RELATION_CHECK;
-        if ((props & (KP_IS_MODIFIER | KP_IS_PHYS_MOD | KP_IS_SYS_MOD)) == 0) scanFlags |= KFS_KU_RETRO_MOD_CHECK;
-        if ((props & KP_IS_MODIFIER) == 0) scanFlags |= KFS_PQ_WAIT_SCAN;
-        if ((props & KP_IS_MODIFIER) != 0) scanFlags |= KFS_PQ_MODIFIER_RESOLVE;
-        if ((props & KP_IS_MODIFIER) == 0) scanFlags |= KFS_PQ_PREFIX_SCAN;
+        if ((props & (KP_CAN_BE_COMBO_SECONDARY | KP_CAN_BE_INSTANT_COMBO_SECONDARY)) != 0) scanFlags |= KFS_KD_RELATION_CHECK;
+        if ((props & KP_CAN_PARTICIPATE_IN_CHORD) != 0) scanFlags |= KFS_KD_CHORD_CHECK;
+        if ((props & (KP_IS_PHYSICAL_MODIFIER | KP_IS_WINDOWS_FACING_MODIFIER)) == 0) scanFlags |= KFS_KD_INTENTIONAL_CHORD;
+        if ((props & (KP_CAN_BE_COMBO_SECONDARY | KP_CAN_BE_INSTANT_COMBO_SECONDARY)) != 0) scanFlags |= KFS_KU_RELATION_CHECK;
+        if ((props & (KP_HAS_VIRTUAL_MODIFIER_ROLE | KP_IS_PHYSICAL_MODIFIER | KP_IS_WINDOWS_FACING_MODIFIER)) == 0) scanFlags |= KFS_KU_RETRO_MOD_CHECK;
+        if ((props & KP_HAS_VIRTUAL_MODIFIER_ROLE) == 0) scanFlags |= KFS_PQ_WAIT_SCAN;
+        if ((props & KP_HAS_VIRTUAL_MODIFIER_ROLE) != 0) scanFlags |= KFS_PQ_MODIFIER_RESOLVE;
+        if ((props & KP_HAS_VIRTUAL_MODIFIER_ROLE) == 0) scanFlags |= KFS_PQ_PREFIX_SCAN;
 
         tmpGate[vi] = .{
             .kdPlan = kdPlan,
@@ -3572,20 +4194,20 @@ fn rebuildKeyGate() void {
 
         // processQueue plan: precompute which resolution branches can fire for this key.
         var pqPlan: u32 = 0;
-        if ((props & KP_IS_MODIFIER) != 0) {
-            pqPlan |= PQP_IS_MODIFIER | PQP_NEEDS_MODIFIER_RESOLVE;
+        if ((props & KP_HAS_VIRTUAL_MODIFIER_ROLE) != 0) {
+            pqPlan |= PQP_HAS_VIRTUAL_MODIFIER_ROLE | PQP_NEEDS_MODIFIER_RESOLVE;
         } else {
             // Non-modifier keys: may wait on older unresolved keys,
             // may receive a long-held modifier prefix on tap emit.
             pqPlan |= PQP_NEEDS_WAIT_SCAN | PQP_CAN_PREFIX_SCAN;
         }
-        if ((props & KP_HAS_HOLD) != 0) pqPlan |= PQP_HAS_HOLD | PQP_NEEDS_HOLD_CLASSIFY;
-        if ((props & KP_CAN_COMBO_SECONDARY) != 0) pqPlan |= PQP_CAN_COMBO_SECONDARY;
-        if ((props & KP_CAN_INSTANT_SECONDARY) != 0) pqPlan |= PQP_CAN_INSTANT_SECONDARY;
+        if ((props & KP_HAS_HOLD_CALLBACK) != 0) pqPlan |= PQP_HAS_HOLD | PQP_NEEDS_HOLD_CLASSIFY;
+        if ((props & KP_CAN_BE_COMBO_SECONDARY) != 0) pqPlan |= PQP_CAN_COMBO_SECONDARY;
+        if ((props & KP_CAN_BE_INSTANT_COMBO_SECONDARY) != 0) pqPlan |= PQP_CAN_INSTANT_SECONDARY;
         // PQP_FAST_EMIT_TAP / PQP_PLAIN_NO_HOLD: plain non-mod key with no secondary or
         // hold capability — the common typing case — can be emitted directly when the
         // runtime is clean (no unreleased keys, no active mods).
-        if ((props & (KP_IS_MODIFIER | KP_HAS_HOLD | KP_CAN_COMBO_SECONDARY | KP_CAN_INSTANT_SECONDARY)) == 0)
+        if ((props & (KP_HAS_VIRTUAL_MODIFIER_ROLE | KP_HAS_HOLD_CALLBACK | KP_CAN_BE_COMBO_SECONDARY | KP_CAN_BE_INSTANT_COMBO_SECONDARY)) == 0)
             pqPlan |= PQP_PLAIN_NO_HOLD | PQP_FAST_EMIT_TAP;
         if ((pqPlan & (PQP_NEEDS_MODIFIER_RESOLVE | PQP_NEEDS_WAIT_SCAN | PQP_NEEDS_HOLD_CLASSIFY)) != 0)
             pqPlan |= PQP_NEEDS_SLOW_RESOLVE;
@@ -3637,11 +4259,11 @@ fn rebuildKeyGate() void {
     @memcpy(g_instantPrimaryListForSecondary[0..], tmpInstantPrimList[0..]);
     @memcpy(g_comboPrimaryListLenForSecondary[0..], tmpComboPrimListLen[0..]);
     @memcpy(g_instantPrimaryListLenForSecondary[0..], tmpInstantPrimListLen[0..]);
-    @memcpy(g_keyModType[0..], tmpKeyModType[0..]);
-    @memcpy(g_keySysBit[0..], tmpKeySysBit[0..]);
-    @memcpy(g_keyPhysBit[0..], tmpKeyPhysBit[0..]);
-    @memcpy(g_keyModMask[0..], tmpKeyModMask[0..]);
-    @memcpy(g_keyModVK[0..], tmpKeyModVK[0..]);
+    @memcpy(g_vk_modifier_roles[0..], tmpKeyModType[0..]);
+    @memcpy(g_vk_windows_facing_modifiers[0..], tmpKeySysBit[0..]);
+    @memcpy(g_vk_is_physical_modifier[0..], tmpKeyPhysBit[0..]);
+    @memcpy(g_key_virtual_modifier_mask[0..], tmpKeyModMask[0..]);
+    @memcpy(g_virtual_modifier_output_vk[0..], tmpKeyModVK[0..]);
     @memcpy(g_keyModPrefix[0..], tmpKeyModPrefix[0..]);
     @memcpy(g_keyNamePtr[0..], tmpKeyNamePtr[0..]);
     @memcpy(g_keyHoldCallbackId[0..], tmpKeyHoldCallbackId[0..]);
@@ -3719,7 +4341,7 @@ inline fn kbPut(vk: i32, kd: KeyData) void {
     if (!kd.isReleased()) {
         g_unreleasedKeyCount += 1;
         rfSet(RF_UNREL_KEYS);
-        if (!kd.isModifier()) {
+        if (!kd.isRuntimeModifier()) {
             g_unreleasedNonModCount += 1;
             rfSet(RF_UNREL_NONMOD_KEYS);
         }
@@ -3735,7 +4357,7 @@ inline fn kbRemove(vk: i32) void {
     const wasUnreleased = !removedKd.isReleased();
     if (wasUnreleased) {
         g_unreleasedKeyCount -= 1;
-        if (!removedKd.isModifier()) g_unreleasedNonModCount -= 1;
+        if (!removedKd.isRuntimeModifier()) g_unreleasedNonModCount -= 1;
     }
     g_kbIdx[@intCast(vk)] = -1;
     activePrimaryBitsClear(vk);
@@ -3751,7 +4373,7 @@ inline fn kbRemove(vk: i32) void {
     @memset(&g_kbTidHashes[g_kbLen], 0);
     // If active mods are live, a removal may have created a stale entry.
     // Flag it so processQueue performs the sweep on the next call.
-    if (g_activeModCount > 0) g_modStackDirty = true;
+    if (g_active_virtual_modifier_count > 0) g_modStackDirty = true;
     // FSM-lite: update RF flags after removal
     rfSetIf(RF_KB_NONEMPTY, g_kbLen != 0);
     rfSetIf(RF_UNREL_KEYS, g_unreleasedKeyCount != 0);
@@ -3811,7 +4433,7 @@ inline fn pendingSoloMaterialize() void {
     const flags = g_pendingSoloFlags;
     var kd = KeyData{};
     kd.downTime = g_pendingSoloDownTime;
-    kd.bf(FLAG_IS_MOD, (flags & PSF_IS_MOD) != 0);
+    kd.bf(RUNTIME_CURRENT_VK_IS_ACTIVE_MODIFIER, (flags & PSF_IS_MOD) != 0);
     kd.bf(FLAG_QUIET, (flags & PSF_QUIET) != 0);
     kd.bf(FLAG_INTERFERING, (flags & PSF_INTERFERING) != 0);
     pendingSoloDeactivate();
@@ -3958,7 +4580,7 @@ inline fn pendingRollMaterialize() void {
         const flags = localFlags[i];
         var kd = KeyData{};
         kd.downTime = localDowns[i];
-        kd.bf(FLAG_IS_MOD, (flags & PSF_IS_MOD) != 0);
+        kd.bf(RUNTIME_CURRENT_VK_IS_ACTIVE_MODIFIER, (flags & PSF_IS_MOD) != 0);
         kd.bf(FLAG_QUIET, (flags & PSF_QUIET) != 0);
         kd.bf(FLAG_INTERFERING, (flags & PSF_INTERFERING) != 0);
         kbPut(vk, kd);
@@ -4571,42 +5193,45 @@ fn activeModContains(vk: i32) bool {
     if (vk < 0 or vk >= VK_COUNT) return false;
     return g_activeModPresent[@intCast(vk)]; // O(1) indexed load
 }
-fn activeModAdd(vk: i32) void {
-    if (activeModContains(vk) or g_activeModCount >= ACTIVE_MOD_MAX) return;
+// Adds one active virtual modifier-role VK and updates derived virtual modifier state.
+fn add_active_virtual_modifier(vk: i32) void {
+    if (activeModContains(vk) or g_active_virtual_modifier_count >= ACTIVE_MOD_MAX) return;
 
-    g_activeMods[@intCast(g_activeModCount)] = vk;
+    g_active_virtual_modifiers_by_vk[@intCast(g_active_virtual_modifier_count)] = vk;
     if (vk >= 0 and vk < VK_COUNT) {
         g_activeModPresent[@intCast(vk)] = true;
-        g_activeModIdx[@intCast(vk)] = g_activeModCount;
+        g_activeModIdx[@intCast(vk)] = g_active_virtual_modifier_count;
     }
-    g_activeModCount += 1;
+    g_active_virtual_modifier_count += 1;
 
     if (vk >= 0 and vk < VK_COUNT)
-        g_activeModMask |= @intCast(g_keyModMask[@intCast(vk)]);
+        g_active_virtual_modifiers |= @intCast(g_key_virtual_modifier_mask[@intCast(vk)]);
 
     rfSet(RF_ACTIVE_MODS); // FSM-lite
 }
 
-fn rebuildActiveModMask() void {
+// Recomputes active virtual modifier-family state from active modifier-role VKs.
+fn rebuild_active_virtual_modifiers() void {
     var mask: u16 = 0;
     var i: usize = 0;
-    while (i < @as(usize, @intCast(g_activeModCount))) : (i += 1) {
-        const vk = g_activeMods[i];
+    while (i < @as(usize, @intCast(g_active_virtual_modifier_count))) : (i += 1) {
+        const vk = g_active_virtual_modifiers_by_vk[i];
         if (vk >= 0 and vk < VK_COUNT)
-            mask |= @as(u16, @intCast(g_keyModMask[@intCast(vk)]));
+            mask |= @as(u16, @intCast(g_key_virtual_modifier_mask[@intCast(vk)]));
     }
-    g_activeModMask = mask;
-    rfSetIf(RF_ACTIVE_MODS, g_activeModCount != 0);
+    g_active_virtual_modifiers = mask;
+    rfSetIf(RF_ACTIVE_MODS, g_active_virtual_modifier_count != 0);
 }
 
-fn activeModRemove(vk: i32) void {
+// Removes one active virtual modifier-role VK and updates derived state.
+fn remove_active_virtual_modifier(vk: i32) void {
     if (vk < 0 or vk >= VK_COUNT) return;
     var idx = g_activeModIdx[@intCast(vk)];
-    if (idx < 0 or idx >= g_activeModCount or g_activeMods[@intCast(idx)] != vk) {
+    if (idx < 0 or idx >= g_active_virtual_modifier_count or g_active_virtual_modifiers_by_vk[@intCast(idx)] != vk) {
         idx = -1;
         var scan_i: usize = 0;
-        while (scan_i < @as(usize, @intCast(g_activeModCount))) : (scan_i += 1) {
-            if (g_activeMods[scan_i] == vk) {
+        while (scan_i < @as(usize, @intCast(g_active_virtual_modifier_count))) : (scan_i += 1) {
+            if (g_active_virtual_modifiers_by_vk[scan_i] == vk) {
                 idx = @intCast(scan_i);
                 break;
             }
@@ -4614,42 +5239,44 @@ fn activeModRemove(vk: i32) void {
         if (idx < 0) {
             g_activeModPresent[@intCast(vk)] = false;
             g_activeModIdx[@intCast(vk)] = -1;
-            rebuildActiveModMask();
+            rebuild_active_virtual_modifiers();
             return;
         }
     }
 
-    g_activeModCount -= 1;
-    if (idx < g_activeModCount) {
+    g_active_virtual_modifier_count -= 1;
+    if (idx < g_active_virtual_modifier_count) {
         // Move last element to the removed position
-        const lastVK = g_activeMods[@intCast(g_activeModCount)];
-        g_activeMods[@intCast(idx)] = lastVK;
+        const lastVK = g_active_virtual_modifiers_by_vk[@intCast(g_active_virtual_modifier_count)];
+        g_active_virtual_modifiers_by_vk[@intCast(idx)] = lastVK;
         if (lastVK >= 0 and lastVK < VK_COUNT) g_activeModIdx[@intCast(lastVK)] = idx;
     }
     if (vk >= 0 and vk < VK_COUNT) {
         g_activeModPresent[@intCast(vk)] = false;
         g_activeModIdx[@intCast(vk)] = -1;
     }
-    rebuildActiveModMask();
+    rebuild_active_virtual_modifiers();
 }
-fn activeModClear() void {
+// Clears the active virtual modifier-role collection and derived state.
+fn clear_active_virtual_modifiers() void {
     var i: usize = 0;
-    while (i < @as(usize, @intCast(g_activeModCount))) : (i += 1) {
-        const vk = g_activeMods[i];
+    while (i < @as(usize, @intCast(g_active_virtual_modifier_count))) : (i += 1) {
+        const vk = g_active_virtual_modifiers_by_vk[i];
         if (vk >= 0 and vk < VK_COUNT) {
             g_activeModPresent[@intCast(vk)] = false;
             g_activeModIdx[@intCast(vk)] = -1;
         }
     }
-    g_activeModCount = 0;
-    g_activeModMask = 0;
+    g_active_virtual_modifier_count = 0;
+    g_active_virtual_modifiers = 0;
     rfClear(RF_ACTIVE_MODS); // FSM-lite
 }
 fn countUnreleasedModifiers() i32 {
     return g_unrelModCount;
 }
-fn buildModMaskFromActive() u16 {
-    return g_activeModMask;
+// Returns the active virtual modifier-family mask.
+fn get_active_virtual_modifier_mask() u16 {
+    return g_active_virtual_modifiers;
 }
 
 fn rebuildUnreleasedModifierCounters() void {
@@ -4657,7 +5284,7 @@ fn rebuildUnreleasedModifierCounters() void {
     var clean: i32 = 0;
     for (0..g_kbLen) |i| {
         const kd = g_kbData[i];
-        if (!kd.isModifier() or kd.isReleased() or kd.chordPending()) continue;
+        if (!kd.isRuntimeModifier() or kd.isReleased() or kd.chordPending()) continue;
         unrel += 1;
         if (!kd.hasInterferingKeys()) clean += 1;
     }
@@ -4792,10 +5419,10 @@ fn schedThreadProc(_: ?*anyopaque) callconv(.winapi) u32 {
             const sleep_ns = delta_ns - 3_000_000;
             if (g_schedTimer) |ht| {
                 const due_100ns: i64 = -@divTrunc(sleep_ns, 100);
-                _ = SetWaitableTimer(ht, &due_100ns, 0, null, null, 0);
+                _ = SetWaitableTimer(ht, &due_100ns, 0, null, null, FALSE);
                 if (g_schedEvent) |ev| {
                     const handles = [_]HANDLE{ ht, ev };
-                    _ = WaitForMultipleObjects(2, &handles, 0, INFINITE);
+                    _ = WaitForMultipleObjects(2, &handles, FALSE, INFINITE);
                     _ = ResetEvent(ev);
                 } else {
                     _ = WaitForSingleObject(ht, INFINITE);
@@ -4811,11 +5438,11 @@ fn schedThreadProc(_: ?*anyopaque) callconv(.winapi) u32 {
                 }
             }
         } else if (delta_ns > 50_000) {
-            asm volatile ("pause" ::: "memory");
+            asm volatile ("pause" ::: .{});
         } else {
             var spin_now = getTime();
             while (spin_now < entry.?.deadline) {
-                asm volatile ("pause" ::: "memory");
+                asm volatile ("pause" ::: .{});
                 spin_now = getTime();
             }
             schedFire(entry.?);
@@ -4836,7 +5463,7 @@ fn initSchedThread() void {
             return;
         }
     }
-    if (g_schedEvent == null) g_schedEvent = CreateEventW(null, 1, 0, null);
+    if (g_schedEvent == null) g_schedEvent = CreateEventW(null, TRUE, FALSE, null);
     if (g_schedTimer == null) {
         g_schedTimer = CreateWaitableTimerExW(null, null, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
         if (g_schedTimer == null) {
@@ -4895,6 +5522,13 @@ fn removeFromKeyOrder(vk: i32) void {
     ordRemoveAt(rel);
 }
 fn queueCallback(callbackId: i32, key1: *const [KN_LEN]u16, key2: [*:0]const u16, type_: i32) void {
+    // Hold/tap/combo resolution reaches this function with the runtime's
+    // semantic decision already made.  Use the same callback transport as
+    // queueRuntimeCallback: a compiled Zig callback executes in Zig, while a
+    // compiled AHK callback remains a pending IPC record.  This preserves the
+    // type/key metadata needed by the AHK bridge without creating a second
+    // decision path for compiled rows.
+    if (invokeCompiledZigCallback(callbackId)) return;
     var cb = PendingCallback{ .callbackId = callbackId, .type_ = type_, .vk = 0, .modifierMask = 0 };
     @memcpy(cb.key1[0..KN_LEN], key1);
     wcpyS(&cb.key2, 8, key2);
@@ -4965,19 +5599,23 @@ inline fn nativeHotkeyPayloadOffset(callbackId: i32) ?[*:0]const u16 {
 
 fn appendNativePayloadBuffer(storage: *[]u16, chars: [*]const u16, charsLen: u32) usize {
     // Payload IDs are permanent registration data, so later setup calls must
-    // append instead of replacing the backing buffer. Keep one trailing guard
-    // NUL outside the logical content and return the base offset for this call.
+    // append instead of replacing the backing buffer. Every payload needs its
+    // own NUL because native dispatch reads the payload through a zero-terminated
+    // pointer. Keep one additional trailing guard NUL and return the base offset
+    // for this call.
     // Do not immediately free the previous buffer here: the async native paste
     // worker may already have resolved a pointer into it.
     const old_content_len: usize = if (storage.*.len == 0) 0 else storage.*.len - 1;
     if (charsLen == 0) return old_content_len;
-    const add_len: usize = @intCast(charsLen);
-    const new_len = old_content_len + add_len + 1;
+    const chars_len: usize = @as(usize, @intCast(charsLen));
+    const payload_len: usize = chars_len + 1;
+    const new_len = old_content_len + payload_len + 1;
     const buf = gAlloc.alloc(u16, new_len) catch return NATIVE_PAYLOAD_APPEND_FAILED;
     const old_storage = storage.*;
     if (old_content_len != 0) @memcpy(buf[0..old_content_len], storage.*[0..old_content_len]);
-    @memcpy(buf[old_content_len .. old_content_len + add_len], chars[0..add_len]);
-    buf[old_content_len + add_len] = 0;
+    @memcpy(buf[old_content_len .. old_content_len + chars_len], chars[0..chars_len]);
+    buf[old_content_len + chars_len] = 0;
+    buf[old_content_len + payload_len] = 0;
     storage.* = buf;
     retireSlice(u16, old_storage);
     return old_content_len;
@@ -5020,6 +5658,7 @@ var g_nativePasteInFlight: i32 = 0;
 var g_nativePasteFired: u32 = 0;
 var g_nativePasteDropped: u32 = 0;
 var g_nativePasteFailed: u32 = 0;
+var g_testDirectKeySendCount: u32 = 0;
 
 fn nativePasteThreadProc(_: ?*anyopaque) callconv(.winapi) u32 {
     _ = SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
@@ -5052,6 +5691,15 @@ fn nativePasteThreadProc(_: ?*anyopaque) callconv(.winapi) u32 {
             _ = @atomicRmw(u32, &g_nativePasteFailed, .Add, 1, .monotonic);
             continue;
         }
+        // Replay/test mode suppresses every output route, including the
+        // native-payload worker.  The ring sender already observes this flag,
+        // but calling QMK_Paste here would bypass it and could inject text
+        // during an otherwise non-interactive Zig verification run.
+        if (g_suppressOutputForReplay) {
+            @atomicStore(i32, &g_nativePasteInFlight, 0, .release);
+            reclaimRetiredAllocationsIfSafe();
+            continue;
+        }
         if (QMK_Paste(text.?) == 0) {
             _ = @atomicRmw(u32, &g_nativePasteFailed, .Add, 1, .monotonic);
         }
@@ -5062,7 +5710,7 @@ fn nativePasteThreadProc(_: ?*anyopaque) callconv(.winapi) u32 {
 }
 
 fn initNativePasteThread() void {
-    if (g_nativePasteEvent == null) g_nativePasteEvent = CreateEventW(null, 1, 0, null);
+    if (g_nativePasteEvent == null) g_nativePasteEvent = CreateEventW(null, TRUE, FALSE, null);
     if (g_nativePasteThread) |th| {
         const wait_result = WaitForSingleObject(th, 0);
         if (wait_result == WAIT_OBJECT_0) {
@@ -5121,7 +5769,40 @@ inline fn enqueueNativePaste(kind: u8, callbackId: i32) void {
     if (g_nativePasteEvent) |ev| _ = SetEvent(ev);
 }
 
+fn invokeCompiledZigCallback(callbackId: i32) bool {
+    if (callbackId > COMPILED_ZIG_CALLBACK_ID_BASE or
+        callbackId <= COMPILED_ZIG_CALLBACK_ID_BASE - @as(i32, @intCast(COMPILED_CALLBACK_SLOT_MAX))) return false;
+    if (comptime has_compiled_user_shortcuts_build and @hasDecl(compiled_user_shortcuts, "Compiled_Callbacks")) {
+        const slot: u32 = @intCast(COMPILED_ZIG_CALLBACK_ID_BASE - callbackId);
+        inline for (compiled_user_shortcuts.Compiled_Callbacks.zig) |descriptor| {
+            if (descriptor.slot == slot) {
+                if (descriptor.zig_fn) |callback| {
+                    callback();
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+// Test-only entry points exercise the same direct dispatch routine used by
+// queued runtime callbacks. They are intentionally observational and are not
+// part of the production callback ABI.
+export fn QMK_TestInvokeCompiledZigCallback(slot: i32) callconv(.c) i32 {
+    if (slot < 0 or slot >= @as(i32, @intCast(COMPILED_CALLBACK_SLOT_MAX))) return 0;
+    return if (invokeCompiledZigCallback(COMPILED_ZIG_CALLBACK_ID_BASE - slot)) 1 else 0;
+}
+
+export fn QMK_TestGetCompiledZigSentinel() callconv(.c) u32 {
+    if (comptime has_compiled_user_shortcuts_build and @hasDecl(compiled_user_shortcuts, "Compiled_Callbacks") and
+        @hasDecl(compiled_user_shortcuts.Compiled_Callbacks, "zig_sentinel"))
+        return compiled_user_shortcuts.Compiled_Callbacks.zig_sentinel;
+    return 0;
+}
+
 fn queueRuntimeCallback(callbackId: i32, type_: i32) void {
+    if (invokeCompiledZigCallback(callbackId)) return;
     if (@atomicLoad(i32, &g_runtimeHotkeysSuspended, .acquire) != 0 and callbackId >= 0) {
         const id: usize = @intCast(callbackId);
         if (id >= g_runtimeCallbackSuspendExempt.len or !g_runtimeCallbackSuspendExempt[id]) return;
@@ -5142,7 +5823,7 @@ fn queueRuntimeCallback(callbackId: i32, type_: i32) void {
     } else if (type_ == 9) {
         if (nativeHotkeyPayloadOffset(callbackId)) |ptr| {
             if (parseSendDirectSpecText16(wideZSpan(ptr))) |parsed| {
-                sendKeyDirect(parsed.vk, parsed.mods);
+                sendDirectSpec(parsed);
             } else {
                 enqueueNativePaste(9, callbackId);
             }
@@ -5210,14 +5891,33 @@ fn pushIpcControl(callback_idx: i64) bool {
 }
 
 fn pendingCallbackToIpcIndex(cb: PendingCallback) i64 {
+    // Runtime callbacks use the ordinary positive callback table.  Compiled
+    // AHK callbacks use the reserved negative compiled-ID range and must be
+    // forwarded unchanged so QMKInterception.ahk can resolve them in
+    // QMKCompiledCallbackMap.
     return switch (cb.type_) {
-        0, 1, 2, 5, 6 => shortcutCallbackIndex(cb.type_, cb.callbackId),
-        7 => if (cb.callbackId < 0)
+        0, 1, 2, 5, 6 => if (isCompiledZigCallbackId(cb.callbackId))
+            // Holds, taps, modifiers, and chord callbacks use the legacy
+            // type-specific conversion below for ordinary runtime IDs.  A
+            // generated AHK callback is different: preserve its reserved
+            // compiled ID so the AHK callback map can receive it.
+            cb.callbackId
+        else
+            shortcutCallbackIndex(cb.type_, cb.callbackId),
+        7 => if (isCompiledZigCallbackId(cb.callbackId))
+            // Generated AHK callbacks already carry the reserved compiled
+            // ID. Preserve it for QMKInterception.ahk; treating it as the
+            // legacy negative hotstring-table index would turn it into
+            // IPC_NOOP and the callback would never cross the bridge.
+            cb.callbackId
+        else if (cb.callbackId < 0)
             hotstringCallbackIndex(@intCast(-cb.callbackId - 1))
         else
             cb.callbackId,
         8 => if (cb.callbackId >= 0)
             hotkeyCallbackIndex(@intCast(cb.callbackId))
+        else if (isCompiledZigCallbackId(cb.callbackId))
+            cb.callbackId
         else
             ipc.IPC_NOOP,
         9 => cb.callbackId,
@@ -5480,7 +6180,7 @@ const RUNTIME_PUBLISH_HOTSTRING_CONTEXT_MASK: u32 = 1 << 3;
 
 fn reconcileTrackedPhysicalKeysDown() u32 {
     var count: u32 = 0;
-    inline for (0..4) |i| count += @popCount(@atomicLoad(u64, &g_physicalKeyDownBits[i], .acquire));
+    inline for (0..4) |i| count += @popCount(@atomicLoad(u64, &g_is_vk_held[i], .acquire));
     g_trackedPhysicalKeysDown = count;
     return count;
 }
@@ -5489,7 +6189,7 @@ fn rebuildTrackedPhysicalModifierDerivedState() void {
     var physical_mask: u16 = 0;
     var hotkey_mask: u16 = 0;
     var lr_mask: u8 = 0;
-    @memset(&g_physicalHotkeyModCounts, 0);
+    @memset(&g_active_physical_modifier_key_counts_by_category, 0);
     for (ALL_MOD_VKS, ALL_MOD_MASKS) |vk, bit| {
         const vki: usize = @intCast(vk);
         if (!physicalKeyDownAt(vki)) continue;
@@ -5498,24 +6198,24 @@ fn rebuildTrackedPhysicalModifierDerivedState() void {
         const slot_i = hotkeyModSlotForVK(vk);
         if (slot_i >= 0) {
             const slot: usize = @intCast(slot_i);
-            if (g_physicalHotkeyModCounts[slot] != std.math.maxInt(u8)) {
-                g_physicalHotkeyModCounts[slot] += 1;
+            if (g_active_physical_modifier_key_counts_by_category[slot] != std.math.maxInt(u8)) {
+                g_active_physical_modifier_key_counts_by_category[slot] += 1;
             }
             hotkey_mask |= hotkeyModBitForSlot(slot);
         }
     }
-    g_physicalHotkeyModMask = hotkey_mask;
-    g_physicalHotkeyLRModMask = lr_mask;
-    g_physicalModMask = physical_mask;
-    g_physicalModMaskActive = physical_mask != 0;
-    g_modBitmask = physical_mask;
-    rfSetIf(RF_PHYSICAL_MODS, g_physicalModMaskActive);
-    rfSetIf(RF_SYS_MODS, g_modBitmask != 0);
+    g_which_physical_modifiers_to_send = hotkey_mask;
+    g_lr_active_physical_modifiers = lr_mask;
+    g_active_physical_modifiers = physical_mask;
+    g_any_physical_modifiers_active = physical_mask != 0;
+    g_active_physical_and_windows_facing_modifiers = physical_mask;
+    rfSetIf(RF_PHYSICAL_MODS, g_any_physical_modifiers_active);
+    rfSetIf(RF_SYS_MODS, g_active_physical_and_windows_facing_modifiers != 0);
 }
 
 inline fn restoreSystemModBitmaskFromPhysicalState() void {
-    g_modBitmask = @intCast(g_physicalModMask);
-    rfSetIf(RF_SYS_MODS, g_modBitmask != 0);
+    g_active_physical_and_windows_facing_modifiers = @intCast(g_active_physical_modifiers);
+    rfSetIf(RF_SYS_MODS, g_active_physical_and_windows_facing_modifiers != 0);
 }
 
 fn syncPhysicalModifierStateFromSystem() void {
@@ -5572,6 +6272,8 @@ fn syncColdPhysicalStateFromSystem() void {
 }
 
 fn clearRuntimePublishStateForReset() void {
+    g_precompiledShortcutsApplied = false;
+    g_precompiledShortcutsLoadStarted = false;
     @atomicStore(u32, &g_runtimePublishPendingMask, 0, .release);
     g_pendingContextChangedMask = 0;
     g_pendingHotstringContextMask = 0;
@@ -5592,6 +6294,7 @@ fn clearRuntimePublishStateForReset() void {
     g_runtimeHotkeysPublishedLen = 0;
     g_runtimeContextActionsPublishedLen = 0;
     g_runtimeModifiersPublishedLen = 0;
+    g_runtimePassthroughsPublishedLen = 0;
     g_runtimeCombosPublishedLen = 0;
     g_runtimeInstantCombosPublishedLen = 0;
     g_runtimeComboPublishedRegistrationSeq = 0;
@@ -5633,8 +6336,14 @@ fn flushRuntimePublishIfIdleLocked() void {
             g_pendingHotstringContextMaskValid = false;
         }
 
-        if ((mask & RUNTIME_PUBLISH_SETUP) != 0 and !publishDeferredRuntimeSetup()) {
-            publish_failed_mask |= RUNTIME_PUBLISH_SETUP;
+        if ((mask & RUNTIME_PUBLISH_SETUP) != 0) {
+            if (!publishDeferredRuntimeSetup()) {
+                publish_failed_mask |= RUNTIME_PUBLISH_SETUP;
+            } else if (g_precompiledShortcutsLoadStarted) {
+                // The compiled preload is complete only after the combined
+                // runtime rows and their active indexes publish successfully.
+                g_precompiledShortcutsApplied = true;
+            }
         }
         if ((mask & RUNTIME_PUBLISH_CONTEXTS) != 0 and g_pendingContextChangedMask != 0) {
             const changed = g_pendingContextChangedMask;
@@ -5645,7 +6354,7 @@ fn flushRuntimePublishIfIdleLocked() void {
             }
         }
         if ((mask & RUNTIME_PUBLISH_KEYGATE) != 0 and publish_failed_mask == 0) {
-            rebuildKeyGate();
+            rebuild_runtime_vk_plan();
             g_keyGateDirty = false;
             warmHotTables();
         } else if ((mask & RUNTIME_PUBLISH_KEYGATE) != 0) {
@@ -5890,17 +6599,17 @@ fn snapshotPhysicalMods() u8 {
 }
 
 inline fn hiddenPhysicalModsFromOs() u8 {
-    return @atomicLoad(u8, &g_physicalModHiddenFromOsLRMask, .acquire);
+    return @atomicLoad(u8, &g_physical_modifier_hidden_from_os_lr_mask, .acquire);
 }
 
 inline fn markPhysicalModsHiddenFromOs(mask: u8) void {
     if (mask == 0) return;
-    _ = @atomicRmw(u8, &g_physicalModHiddenFromOsLRMask, .Or, mask, .acq_rel);
+    _ = @atomicRmw(u8, &g_physical_modifier_hidden_from_os_lr_mask, .Or, mask, .acq_rel);
 }
 
 inline fn clearPhysicalModsHiddenFromOs(mask: u8) void {
     if (mask == 0) return;
-    _ = @atomicRmw(u8, &g_physicalModHiddenFromOsLRMask, .And, ~mask, .acq_rel);
+    _ = @atomicRmw(u8, &g_physical_modifier_hidden_from_os_lr_mask, .And, ~mask, .acq_rel);
 }
 
 /// Snapshot physical modifiers whose DOWN Windows currently owns. Synthetic
@@ -6062,6 +6771,8 @@ inline fn hotstringObserveSyntheticEdit(vk: i32, modifierMask: u16) void {
 }
 
 fn sendKeyDirectWithInfo(vk: i32, modifierMask: u16, extraInfo: u64) void {
+    if (compiled_shortcuts_test_observability)
+        _ = @atomicRmw(u32, &g_testDirectKeySendCount, .Add, 1, .monotonic);
     if (vk == 0) return;
     hotstringObserveSyntheticEdit(vk, modifierMask);
     const profT = profStart();
@@ -6111,7 +6822,7 @@ fn sendFirstRepeatKeyDirect(vk: i32) void {
     spin_now = @as(i64, @bitCast(rdtsc()));
     const spin_end = spin_now + @divTrunc(g_qpcFreq, 1000); // 1ms delay
     while (spin_now < spin_end) {
-        asm volatile ("pause" ::: "memory");
+        asm volatile ("pause" ::: .{});
         spin_now = @as(i64, @bitCast(rdtsc()));
     }
 
@@ -6132,7 +6843,7 @@ inline fn repeatGestureStillDown(triggerVK: i32) bool {
     // exactly its two held trigger keys and no third physical key.
     var physical_down_count: u32 = 0;
     inline for (0..4) |i| {
-        physical_down_count += @popCount(@atomicLoad(u64, &g_physicalKeyDownBits[i], .acquire));
+        physical_down_count += @popCount(@atomicLoad(u64, &g_is_vk_held[i], .acquire));
     }
     return physical_down_count == @as(u32, @intCast(required_len));
 }
@@ -6170,7 +6881,7 @@ fn sendRepeatResolvedAction(triggerVK: i32) bool {
     }
     if (kind == REPEAT_ACTION_CALLBACK) {
         const callback_id = @atomicLoad(i32, &g_repeat.action_callback_id, .acquire);
-        if (callback_id < 0) return false;
+        if (callback_id < 0 and !isCompiledZigCallbackId(callback_id)) return false;
         const name_vk = @atomicLoad(i32, &g_repeat.action_name_vk, .acquire);
         const name_ref = cachedNameFromVK(name_vk) orelse return false;
         const callback_type = @atomicLoad(i32, &g_repeat.action_callback_type, .acquire);
@@ -6200,11 +6911,15 @@ inline fn repeatStillMine(myGen: usize, vk: i32) bool {
         @atomicLoad(i32, &g_repeat.vk, .acquire) == vk;
 }
 
-fn repeatVkIsOnlyPhysicalKeyDown(vk: i32) bool {
+inline fn onlyPhysicalKeyDown(vk: i32) bool {
     if (vk <= 0 or vk >= VK_COUNT or !physicalKeyDownVK(vk)) return false;
     var count: u32 = 0;
-    inline for (0..4) |i| count += @popCount(@atomicLoad(u64, &g_physicalKeyDownBits[i], .acquire));
+    inline for (0..4) |i| count += @popCount(@atomicLoad(u64, &g_is_vk_held[i], .acquire));
     return count == 1;
+}
+
+fn repeatVkIsOnlyPhysicalKeyDown(vk: i32) bool {
+    return onlyPhysicalKeyDown(vk);
 }
 
 // E223: No double-tap repeat thread - these are stubs
@@ -6306,11 +7021,11 @@ inline fn hotstringShouldInspectVK(vk: i32) bool {
 }
 
 inline fn hotstringAnyModifierDown() bool {
-    return g_physicalHotkeyModMask != 0;
+    return g_which_physical_modifiers_to_send != 0;
 }
 
 inline fn hotstringShiftDown() bool {
-    return (g_physicalHotkeyModMask & hotkeys.HOTKEY_MOD_SHIFT) != 0;
+    return (g_which_physical_modifiers_to_send & hotkeys.HOTKEY_MOD_SHIFT) != 0;
 }
 
 fn hotstringAddAsciiTap(byte: u8) void {
@@ -6602,8 +7317,12 @@ fn writeVerbatimPasteWide(wide: [*]u16, text: []const u16) usize {
 fn restoreClipboardThreadProc(param: ?*anyopaque) callconv(.winapi) u32 {
     const generation: u32 = @truncate(@intFromPtr(param));
     Sleep(1000);
-    if (generation != @atomicLoad(u32, &g_hotstringClipboardRestoreGeneration, .acquire)) return 0;
-    restoreClipboardAll();
+    var attempt: u32 = 0;
+    while (attempt < 200) : (attempt += 1) {
+        if (generation != @atomicLoad(u32, &g_hotstringClipboardRestoreGeneration, .acquire)) return 0;
+        if (restoreClipboardAll(generation)) return 0;
+        Sleep(25);
+    }
     return 0;
 }
 
@@ -6616,12 +7335,32 @@ const CLIPBOARD_OPEN_ATTEMPTS: u32 = 250;
 const CLIPBOARD_OPEN_RETRY_MS: u32 = 4;
 
 fn openClipboardWithRetry() bool {
+    // A registered owner is useful when available, but it is optional.
+    // OpenClipboard(null) is the longstanding fallback used by the 8.4
+    // implementation and must remain valid when AHK has not registered one.
+    const owner = g_clipboardOwnerHwnd;
     var attempt: u32 = 0;
     while (attempt < CLIPBOARD_OPEN_ATTEMPTS) : (attempt += 1) {
-        if (OpenClipboard(null) != 0) return true;
+        if (OpenClipboard(owner) != FALSE) return true;
         Sleep(CLIPBOARD_OPEN_RETRY_MS);
     }
     return false;
+}
+
+fn ensureClipboardMutex() bool {
+    if (g_clipboardMutex == null) {
+        g_clipboardMutex = CreateMutexW(null, FALSE, null);
+    }
+    return g_clipboardMutex != null;
+}
+
+fn lockClipboardState() bool {
+    if (!ensureClipboardMutex()) return false;
+    return WaitForSingleObject(g_clipboardMutex.?, INFINITE) == WAIT_OBJECT_0;
+}
+
+fn unlockClipboardState() void {
+    if (g_clipboardMutex) |mutex| _ = ReleaseMutex(mutex);
 }
 
 fn backupClipboardThenPutUtf8(text: []const u8, decode_escapes: bool) bool {
@@ -6641,11 +7380,15 @@ fn backupClipboardThenPutUtf8(text: []const u8, decode_escapes: bool) bool {
     return true;
 }
 
-fn restoreClipboardAll() void {
-    if (OpenClipboard(null) == 0) return;
+fn restoreClipboardAll(expected_generation: u32) bool {
+    if (!lockClipboardState()) return false;
+    defer unlockClipboardState();
+    if (expected_generation != @atomicLoad(u32, &g_hotstringClipboardRestoreGeneration, .acquire)) return true;
+    if (!openClipboardWithRetry()) return false;
     defer _ = CloseClipboard();
 
     _ = EmptyClipboard();
+    var success = true;
     var i: usize = 0;
     while (i < g_hotstringClipboardBackupLen) : (i += 1) {
         const backup = g_hotstringClipboardBackup[i];
@@ -6661,9 +7404,11 @@ fn restoreClipboardAll() void {
         _ = GlobalUnlock(hmem);
         if (SetClipboardData(backup.format, hmem) == null) {
             _ = GlobalFree(hmem);
+            success = false;
         }
     }
-    clearClipboardBackup();
+    if (success) clearClipboardBackup();
+    return success;
 }
 
 /// Puts the replacement on the clipboard, backspaces the trigger away and
@@ -6674,6 +7419,11 @@ fn restoreClipboardAll() void {
 /// `decode_escapes` must be true only for the compiled HOTSTRINGS table. See
 /// writeVerbatimPasteUtf8 for why runtime payloads must go through untouched.
 fn sendHotstringPaste(match: hotstrings.HotstringMatch, entry: hotstrings.HotstringEntry, decode_escapes: bool) void {
+    if (!lockClipboardState()) {
+        _ = @atomicRmw(u32, &g_nativePasteFailed, .Add, 1, .monotonic);
+        return;
+    }
+    defer unlockClipboardState();
     if (!backupClipboardThenPutUtf8(entry.replacement, decode_escapes)) {
         _ = @atomicRmw(u32, &g_nativePasteFailed, .Add, 1, .monotonic);
         return;
@@ -6703,6 +7453,11 @@ fn sendHotstringPaste(match: hotstrings.HotstringMatch, entry: hotstrings.Hotstr
 }
 
 fn sendHotstringNativePayload(match: hotstrings.HotstringMatch, text: [*:0]const u16) void {
+    if (!lockClipboardState()) {
+        _ = @atomicRmw(u32, &g_nativePasteFailed, .Add, 1, .monotonic);
+        return;
+    }
+    defer unlockClipboardState();
     const text_len = std.mem.len(text);
     if (!openClipboardWithRetry()) {
         _ = @atomicRmw(u32, &g_nativePasteFailed, .Add, 1, .monotonic);
@@ -6812,6 +7567,9 @@ fn hotstringAfterKeyDown(vk: i32) bool {
 
     const committed = hotstringVKToCommittedByte(vk) orelse return false;
     g_hotstringMatcher.appendCommittedByte(committed);
+    // Only a structural trigger suffix permits context work. A stale active
+    // hotstring bank must not be allowed to hide a valid contextual trigger.
+    prepareStructuralHotstringContext();
     const context_mask = @atomicLoad(u64, &g_hotstringContextState.active_mask, .acquire);
     const runtime_view = activeRuntimeHotstrings();
     if (runtime_view.len != 0) {
@@ -6837,10 +7595,18 @@ fn hotstringAfterKeyDown(vk: i32) bool {
 
     return false;
 }
+
+// Passthrough keys are delivered by the OS instead of processKeyEventHot.
+// They still need to reach the native hotstring matcher when an earlier
+// one-letter hotkey was intentionally deferred for a chord/sequence.
+inline fn observePassthroughHotstring(vk: i32, is_down: bool) void {
+    if (!is_down and hotstringShouldInspectVK(vk)) _ = hotstringAfterKeyDown(vk);
+}
+
 // Send keyVK with whatever modifiers are currently active.
 // Checks g_internalCombos before sending so internal remaps take effect here too.
 fn sendModifiedKey(keyVK: i32) void {
-    const mask = buildModMaskFromActive();
+    const mask = get_active_virtual_modifier_mask();
     if (g_hasInternalCombos) {
         if (icGet(makeComboKey(keyVK, 0))) |remap| {
             if (queueCompiledHotkeyIfMatched(remap.targetVK, remap.modMask | mask, true)) return;
@@ -6910,12 +7676,12 @@ fn repeatThreadProc(_: ?*anyopaque) callconv(.winapi) u32 {
             @atomicStore(i64, &g_repeat.armed_due, due, .release);
             @atomicStore(i32, &g_repeat.worker_phase, RP_ARMED, .release);
 
-            _ = SetWaitableTimer(timer, &due_100ns, 0, null, null, 0);
+            _ = SetWaitableTimer(timer, &due_100ns, 0, null, null, FALSE);
 
             // Wait indefinitely for either:
             //   index 0: timer fired
             //   index 1: state changed / stop / shutdown
-            const wait_result = WaitForMultipleObjects(2, &handles, 0, INFINITE);
+            const wait_result = WaitForMultipleObjects(2, &handles, FALSE, INFINITE);
 
             @atomicStore(i64, &g_repeat.armed_due, 0, .release);
             @atomicStore(i32, &g_repeat.worker_phase, RP_EMITTING, .release);
@@ -6978,7 +7744,7 @@ fn initRepeatWorker() void {
         }
     }
     if (g_repeat.wake_event == null) {
-        g_repeat.wake_event = CreateEventW(null, 0, 0, null);
+        g_repeat.wake_event = CreateEventW(null, FALSE, FALSE, null);
     }
     if (g_repeat.timer == null) {
         g_repeat.timer = CreateWaitableTimerExW(null, null, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
@@ -7119,22 +7885,22 @@ fn resetRepeatLocalState() void {
         if (!kd.modifierActivated()) continue;
 
         const vk = g_kbVK[i];
-        const modVK = g_keyModVK[@intCast(vk)];
+        const modVK = g_virtual_modifier_output_vk[@intCast(vk)];
         if (modVK != 0) {
             ringReset();
             ringAddKey(modVK, KEYEVENTF_KEYUP);
             ringSend();
-            releasedModMask |= @intCast(g_keyModMask[@intCast(vk)]);
+            releasedModMask |= @intCast(g_key_virtual_modifier_mask[@intCast(vk)]);
         }
 
         kd.cf(FLAG_MOD_ACT | FLAG_MOD_TRIG);
     }
-    for (0..@as(usize, @intCast(g_activeModCount))) |i| {
-        const vk = g_activeMods[i];
+    for (0..@as(usize, @intCast(g_active_virtual_modifier_count))) |i| {
+        const vk = g_active_virtual_modifiers_by_vk[i];
         if (vk < 0 or vk >= VK_COUNT) continue;
-        const modMask: u16 = @intCast(g_keyModMask[@intCast(vk)]);
+        const modMask: u16 = @intCast(g_key_virtual_modifier_mask[@intCast(vk)]);
         if (modMask == 0 or (releasedModMask & modMask) != 0) continue;
-        const modVK = g_keyModVK[@intCast(vk)];
+        const modVK = g_virtual_modifier_output_vk[@intCast(vk)];
         if (modVK != 0) {
             ringReset();
             ringAddKey(modVK, KEYEVENTF_KEYUP);
@@ -7150,7 +7916,7 @@ fn resetRepeatLocalState() void {
     ordClear();
     kdtClear();
     kutClear();
-    activeModClear();
+    clear_active_virtual_modifiers();
     restoreSystemModBitmaskFromPhysicalState();
     g_unrelModCount = 0;
     g_cleanUnrelModCount = 0;
@@ -7303,7 +8069,7 @@ inline fn cpuHasWaitPkg() bool {
           [edx] "={edx}" (edx),
         : [leaf] "{eax}" (eax),
           [subleaf] "{ecx}" (ecx),
-        : "memory");
+        : .{});
     return (ecx & (@as(u32, 1) << 5)) != 0;
 }
 
@@ -7311,7 +8077,7 @@ inline fn umonitorPtr(ptr: *u64) void {
     asm volatile ("umonitor %[addr]"
         :
         : [addr] "r" (ptr),
-        : "memory");
+        : .{});
 }
 
 inline fn umwaitUntil(control: u32, deadline_tsc: u64) void {
@@ -7322,7 +8088,7 @@ inline fn umwaitUntil(control: u32, deadline_tsc: u64) void {
         : [lo] "{eax}" (lo),
           [hi] "{edx}" (hi),
           [control] "{ecx}" (control),
-        : "memory");
+        : .{});
 }
 
 inline fn rdtsc() u64 {
@@ -7340,12 +8106,14 @@ inline fn rdtsc() u64 {
 // ============================================================================
 inline fn hasCombo(primary: i32, secondary: i32) bool {
     if (primary < 0 or primary >= VK_COUNT or secondary < 0 or secondary >= VK_COUNT) return false;
+    prepareStructuralComboContext(primary, secondary);
     const runtime_combos = activeRuntimeCombos();
     return g_comboMatrix[@intCast(primary)][@intCast(secondary)] or
         runtime_combos.comboMatrix[@intCast(primary)][@intCast(secondary)];
 }
 inline fn hasInstantCombo(primary: i32, secondary: i32) bool {
     if (primary < 0 or primary >= VK_COUNT or secondary < 0 or secondary >= VK_COUNT) return false;
+    prepareStructuralComboContext(primary, secondary);
     const runtime_combos = activeRuntimeCombos();
     return g_instantComboMatrix[@intCast(primary)][@intCast(secondary)] or
         runtime_combos.instantMatrix[@intCast(primary)][@intCast(secondary)];
@@ -7370,7 +8138,7 @@ fn triggerComboImmediate(pkVK: i32, skVK: i32, pk: *const [KN_LEN]u16, sk: *cons
     var removed_modifier = false;
     if (kbGet(skVK)) |skIt| {
         skIt.sf(FLAG_COMBO_TRIG);
-        removed_modifier = skIt.isModifier() and !skIt.isReleased();
+        removed_modifier = skIt.isRuntimeModifier() and !skIt.isReleased();
         _ = kbRemove(skVK);
         removeFromKeyOrder(skVK);
     }
@@ -7391,7 +8159,7 @@ fn triggerComboImmediate(pkVK: i32, skVK: i32, pk: *const [KN_LEN]u16, sk: *cons
         return;
     }
     const runtimeCb = runtime_combos.comboCallback[pkIndex][skIndex];
-    if (runtimeCb >= 0) {
+    if (runtimeCb >= 0 or isCompiledZigCallbackId(runtimeCb)) {
         armCallbackComboRepeatIfRequested(pkVK, skVK, currentTime, runtimeCb, 1);
         queueCallback(runtimeCb, pk, @as([*:0]const u16, &[_:0]u16{0}), 1);
         return;
@@ -7409,7 +8177,7 @@ inline fn markInstantComboSecondaryConsumed(skVK: i32, currentTime: i64) void {
     if (skVK <= 0 or skVK >= VK_COUNT) return;
     cancelKeyTimers(skVK);
     if (kbGet(skVK)) |skIt| {
-        activeModRemove(skVK);
+        remove_active_virtual_modifier(skVK);
         skIt.sf(FLAG_COMBO_TRIG);
         skIt.cf(FLAG_MOD_ACT | FLAG_CHORD_PENDING);
         skIt.actionType = .modifier_used;
@@ -7441,15 +8209,15 @@ fn triggerInstantComboVK(pkVK: i32, skVK: i32, pk: *const [KN_LEN]u16, currentTi
     pkIt.sf(FLAG_COMBO_TRIG);
     kbMarkComboRepeat(pkVK, pkIt);
     markInstantComboSecondaryConsumed(skVK, currentTime);
-    const primaryWasModifier = pkIt.isModifier();
+    const primaryWasModifier = pkIt.isRuntimeModifier();
     if (primaryWasModifier) {
         pkIt.sf(FLAG_MOD_ACT | FLAG_MOD_TRIG);
-        activeModAdd(pkVK);
+        add_active_virtual_modifier(pkVK);
     }
     defer {
         if (primaryWasModifier) {
             pkIt.cf(FLAG_MOD_ACT);
-            activeModRemove(pkVK);
+            remove_active_virtual_modifier(pkVK);
         }
     }
     const ck = makeComboKey(pkVK, skVK);
@@ -7468,7 +8236,7 @@ fn triggerInstantComboVK(pkVK: i32, skVK: i32, pk: *const [KN_LEN]u16, currentTi
         return;
     }
     const runtimeCb = runtime_combos.instantCallback[pkIndex][skIndex];
-    if (runtimeCb >= 0) {
+    if (runtimeCb >= 0 or isCompiledZigCallbackId(runtimeCb)) {
         armCallbackComboRepeatIfRequested(pkVK, skVK, currentTime, runtimeCb, 2);
         queueCallback(runtimeCb, pk, @as([*:0]const u16, &[_:0]u16{0}), 2);
         return;
@@ -7502,7 +8270,7 @@ fn triggerComboWithQuietCheck(pk: *const [KN_LEN]u16, sk: *const [KN_LEN]u16, ca
             if (kbCount() > 0) {
                 kbClear();
                 ordClear();
-                activeModClear();
+                clear_active_virtual_modifiers();
                 timerClear();
             }
             return;
@@ -7536,7 +8304,7 @@ fn sameModifierGestureWindowTimer(pk: *const [KN_LEN]u16, sk: *const [KN_LEN]u16
     const pkIt = kbGet(pkVK) orelse return;
     if (pkIt.isReleased() or pkIt.modifierActivated() or pkIt.modifierTriggered()) return;
     if (skIt.isReleased()) return;
-    activeModAdd(pkVK);
+    add_active_virtual_modifier(pkVK);
     pkIt.sf(FLAG_MOD_ACT | FLAG_MOD_TRIG);
     sendModifiedKey(skVK);
     // sendKeyDirect sent modifier down+up as a complete pair — clear MOD_ACT so
@@ -7544,7 +8312,7 @@ fn sameModifierGestureWindowTimer(pk: *const [KN_LEN]u16, sk: *const [KN_LEN]u16
     // doesn't emit a spurious extra modifier-up stroke.
     pkIt.cf(FLAG_MOD_ACT);
     pkIt.actionType = .modifier_used;
-    activeModRemove(pkVK);
+    remove_active_virtual_modifier(pkVK);
     _ = kbRemove(skVK);
     removeFromKeyOrder(skVK);
     processQueue();
@@ -7599,7 +8367,7 @@ fn retroActivateModifier(pk: *const [KN_LEN]u16, sk: *const [KN_LEN]u16) void {
     if (pkIt.isReleased() or pkIt.modifierActivated() or pkIt.modifierTriggered()) return;
     const skIt = kbGet(skVK) orelse return;
     if (!skIt.isReleased()) return;
-    activeModAdd(pkVK);
+    add_active_virtual_modifier(pkVK);
     pkIt.sf(FLAG_MOD_ACT | FLAG_MOD_TRIG);
     sendModifiedKey(skVK);
     // sendKeyDirect sent modifier down+up as a complete pair — clear MOD_ACT so
@@ -7607,7 +8375,7 @@ fn retroActivateModifier(pk: *const [KN_LEN]u16, sk: *const [KN_LEN]u16) void {
     // doesn't emit a spurious extra modifier-up stroke.
     pkIt.cf(FLAG_MOD_ACT);
     pkIt.actionType = .modifier_used;
-    activeModRemove(pkVK);
+    remove_active_virtual_modifier(pkVK);
     _ = kbRemove(skVK);
     removeFromKeyOrder(skVK);
     processQueue();
@@ -7617,6 +8385,21 @@ fn retroActivateModifier(pk: *const [KN_LEN]u16, sk: *const [KN_LEN]u16) void {
 // ============================================================================
 inline fn holdHadLaterPhysicalKeyDown(vk: i32) bool {
     return g_lastPhysicalDownVK != vk;
+}
+
+inline fn callbackIdUsable(callback_id: i32) bool {
+    return callback_id >= 0 or isCompiledZigCallbackId(callback_id);
+}
+
+inline fn queueHoldCallbackOnce(vk: i32, key1: *const [KN_LEN]u16) bool {
+    if (vk <= 0 or vk >= VK_COUNT) return false;
+    const vki: usize = @intCast(vk);
+    const callback_id = effectiveHoldCallbackId(vki);
+    if (!callbackIdUsable(callback_id)) return false;
+    if (g_holdCallbackQueued[vki]) return true;
+    g_holdCallbackQueued[vki] = true;
+    queueCallback(callback_id, key1, @ptrCast(&[_:0]u16{0}), 0);
+    return true;
 }
 
 inline fn classifyReleasedNonModAction(vk: i32, hasHold: bool, duration: i64, hasInterfering: bool, modifierPressed: bool) ActionType {
@@ -7641,18 +8424,18 @@ inline fn releaseOverMaxSuppressed(duration: i64) bool {
 fn processQueue() void {
     // SECTION 1: Remove stale active modifiers
     // Remove stale active modifiers (keys that left the buffer without cleanup).
-    // g_modStackDirty is set by kbRemove when g_activeModCount > 0, so this
+    // g_modStackDirty is set by kbRemove when g_active_virtual_modifier_count > 0, so this
     // block is skipped on the vast majority of calls where nothing was removed.
-    if (g_activeModCount > 0 and g_modStackDirty) {
+    if (g_active_virtual_modifier_count > 0 and g_modStackDirty) {
         g_modStackDirty = false;
         var toDelete: [ACTIVE_MOD_MAX]i32 = undefined;
         var tdCount: usize = 0;
-        for (0..@intCast(g_activeModCount)) |i|
-            if (!kbContains(g_activeMods[i])) {
-                toDelete[tdCount] = g_activeMods[i];
+        for (0..@intCast(g_active_virtual_modifier_count)) |i|
+            if (!kbContains(g_active_virtual_modifiers_by_vk[i])) {
+                toDelete[tdCount] = g_active_virtual_modifiers_by_vk[i];
                 tdCount += 1;
             };
-        for (toDelete[0..tdCount]) |vk| activeModRemove(vk);
+        for (toDelete[0..tdCount]) |vk| remove_active_virtual_modifier(vk);
     }
 
     while (g_ordLen > 0) {
@@ -7693,7 +8476,7 @@ fn processQueue() void {
         // With no unreleased keys and no active mods, the wait scan cannot change
         // the answer. Classify here, then reuse the normal removal/emission block.
         if (keyData.actionType == .undecided and
-            (pqPlan & PQP_IS_MODIFIER) == 0 and
+            (pqPlan & PQP_HAS_VIRTUAL_MODIFIER_ROLE) == 0 and
             (g_runtimeFlags & (RF_UNREL_KEYS | RF_ACTIVE_MODS)) == 0 and
             !keyData.modifierPressed() and
             !keyData.comboTriggered())
@@ -7708,7 +8491,7 @@ fn processQueue() void {
         // an older unreleased blocker. This skips the wait scan in rolling cases
         // where younger keys are still held.
         if (keyData.actionType == .undecided and
-            (pqPlan & PQP_IS_MODIFIER) == 0 and
+            (pqPlan & PQP_HAS_VIRTUAL_MODIFIER_ROLE) == 0 and
             g_kbLen == g_ordLen and
             !keyData.modifierPressed() and
             !keyData.comboTriggered())
@@ -7736,13 +8519,13 @@ fn processQueue() void {
                     const pvk = g_kbVK[i];
                     const pd = &g_kbData[i];
                     if (pvk != firstVK) {
-                        if (pd.isModifier() and !pd.isReleased() and pd.modifierActivated()) hasOtherUnrel = true;
+                        if (pd.isRuntimeModifier() and !pd.isReleased() and pd.modifierActivated()) hasOtherUnrel = true;
                     }
-                    if ((pd.isModifier() and pd.modifierActivated() and pd.modifierTriggered()) or pd.comboTriggered())
+                    if ((pd.isRuntimeModifier() and pd.modifierActivated() and pd.modifierTriggered()) or pd.comboTriggered())
                         anyUsed = true;
                     if (!wasQuickStack and pvk != firstVK and
                         (keyData.releaseTime - keyData.downTime) < g_SingleKeyHoldThreshold and
-                        pd.isModifier() and pd.isReleased() and
+                        pd.isRuntimeModifier() and pd.isReleased() and
                         @abs(pd.downTime - keyData.downTime) < g_ModifierGestureWindow and
                         @abs(pd.releaseTime - keyData.releaseTime) < g_SingleKeyHoldThreshold and
                         (pd.releaseTime - pd.downTime) < g_SingleKeyHoldThreshold)
@@ -7757,7 +8540,7 @@ fn processQueue() void {
                     const pq27_start = profStartSect();
                     for (0..g_kbLen) |i| {
                         const pd = &g_kbData[i];
-                        if (g_kbVK[i] != firstVK and pd.isModifier() and pd.isReleased() and
+                        if (g_kbVK[i] != firstVK and pd.isRuntimeModifier() and pd.isReleased() and
                             @abs(pd.downTime - keyData.downTime) < g_SingleKeyHoldThreshold and
                             @abs(pd.releaseTime - keyData.releaseTime) < g_SingleKeyHoldThreshold)
                         {
@@ -7771,7 +8554,7 @@ fn processQueue() void {
                         const pq29_start = profStartSect();
                         for (0..g_kbLen) |i| {
                             const pd = &g_kbData[i];
-                            if (g_kbVK[i] != firstVK and pd.isModifier() and pd.isReleased() and
+                            if (g_kbVK[i] != firstVK and pd.isRuntimeModifier() and pd.isReleased() and
                                 @abs(pd.downTime - keyData.downTime) < g_SingleKeyHoldThreshold)
                                 pd.actionType = .modifier_used;
                         }
@@ -7784,7 +8567,7 @@ fn processQueue() void {
                     const pq31_start = profStartSect();
                     for (0..g_kbLen) |si| {
                         const spd = &g_kbData[si];
-                        if (g_kbVK[si] != firstVK and spd.isModifier() and spd.isReleased() and
+                        if (g_kbVK[si] != firstVK and spd.isRuntimeModifier() and spd.isReleased() and
                             @abs(spd.downTime - keyData.downTime) < g_SingleKeyHoldThreshold and
                             @abs(spd.releaseTime - keyData.releaseTime) < g_SingleKeyHoldThreshold)
                         {
@@ -7814,7 +8597,7 @@ fn processQueue() void {
                         const ekd = &g_kbData[i];
                         if (!ekd.isReleased() and ekd.downTime < keyData.downTime) {
                             if (ekd.modifierTriggered() or ekd.comboTriggered()) continue;
-                            if ((ekd.isModifier() and !ekd.modifierActivated()) or
+                            if ((ekd.isRuntimeModifier() and !ekd.modifierActivated()) or
                                 secondaryAllowsPrimaryFast(
                                     evk,
                                     firstVK,
@@ -7870,7 +8653,7 @@ fn processQueue() void {
                     if (ekd.downTime >= keyDownTime) continue;
                     if (ekd.downTime + g_ModifierGestureWindow > keyDownTime) continue;
                     const mv: usize = @intCast(evk);
-                    const mm = g_keyModMask[mv];
+                    const mm = g_key_virtual_modifier_mask[mv];
                     if (mm != 0 and seen & mm == 0 and pi < 7) {
                         seen |= mm;
                         pfx[pi] = g_keyModPrefix[mv];
@@ -7886,10 +8669,7 @@ fn processQueue() void {
             if (keyData.isContaminated()) {
                 continue;
             }
-            const hcId = if ((pqPlan & PQP_HAS_HOLD) != 0) activeContextDerived().holdCallback[@intCast(firstVK)] else -1;
-            if (hcId != -1) {
-                queueCallback(hcId, firstName, @ptrCast(&[_:0]u16{0}), 0);
-            } else {
+            if (!queueHoldCallbackOnce(firstVK, firstName)) {
                 queueDirectTapCallback(firstVK, firstName);
             }
         }
@@ -7898,7 +8678,7 @@ fn processQueue() void {
 
 fn drainHeadOldestKeyupTap() bool {
     if (g_ordLen == 0 or g_kbLen != g_ordLen) return false;
-    if (g_activeModCount != 0 or g_modBitmask != 0) return false;
+    if (g_active_virtual_modifier_count != 0 or g_active_physical_and_windows_facing_modifiers != 0) return false;
 
     const firstVK = ordAt(0);
     const firstIdx = g_kbIdx[@intCast(firstVK)];
@@ -7910,7 +8690,7 @@ fn drainHeadOldestKeyupTap() bool {
     if (keyData.tidCount != 0 or keyData.sameModTidHash != 0) return false;
 
     const pqPlan = activeContextDerived().queuePlan[@intCast(firstVK)];
-    if ((pqPlan & PQP_IS_MODIFIER) != 0) return false;
+    if ((pqPlan & PQP_HAS_VIRTUAL_MODIFIER_ROLE) != 0) return false;
     const dur = keyData.releaseTime - keyData.downTime;
     const hasHold = (pqPlan & PQP_HAS_HOLD) != 0;
     const actionHead = classifyReleasedNonModAction(firstVK, hasHold, dur, keyData.hasInterferingKeys(), false);
@@ -7925,7 +8705,7 @@ fn drainHeadOldestKeyupTap() bool {
 
 inline fn processQueueAfterKeyUpNoWork() bool {
     if (g_ordLen == 0) return false;
-    if (g_activeModCount > 0 and g_modStackDirty) return false;
+    if (g_active_virtual_modifier_count > 0 and g_modStackDirty) return false;
     const firstVK = ordAt(0);
     if (firstVK < 0 or firstVK >= VK_COUNT) return false;
     const firstIdx = g_kbIdx[@intCast(firstVK)];
@@ -7935,7 +8715,7 @@ inline fn processQueueAfterKeyUpNoWork() bool {
 
 inline fn processQueueAfterKeyUp() void {
     if (g_ordLen == 0) {
-        if (!(g_activeModCount > 0 and g_modStackDirty)) return;
+        if (!(g_active_virtual_modifier_count > 0 and g_modStackDirty)) return;
         const ku234_start = profStartSect();
         processQueue();
         profSpan(KU_BASE + 234, ku234_start); // ku234 span: pqAfter empty-order dirty processQueue
@@ -7950,13 +8730,13 @@ inline fn processQueueAfterKeyUp() void {
     const ku235_start = profStartSect();
     const drained_head =
         g_kbLen == g_ordLen and
-        g_activeModCount == 0 and
-        g_modBitmask == 0 and
+        g_active_virtual_modifier_count == 0 and
+        g_active_physical_and_windows_facing_modifiers == 0 and
         drainHeadOldestKeyupTap();
     profSpan(KU_BASE + 235, ku235_start); // ku235 span: pqAfter head-oldest drain attempt
     if (g_kbLen == g_ordLen and
-        g_activeModCount == 0 and
-        g_modBitmask == 0 and
+        g_active_virtual_modifier_count == 0 and
+        g_active_physical_and_windows_facing_modifiers == 0 and
         drained_head and
         g_ordLen == 0)
     {
@@ -8174,7 +8954,7 @@ fn fireExactChordFromKeyUp(keyVK: i32, chordMods: []const i32, currentTime: i64)
     for (chordMods) |qvk| cancelKeyTimers(qvk);
     cancelKeyTimers(keyVK);
     for (chordMods) |qvk| {
-        activeModRemove(qvk);
+        remove_active_virtual_modifier(qvk);
         if (kbGet(qvk)) |kd| {
             kd.sf(FLAG_COMBO_TRIG | FLAG_MOD_TRIG);
             kd.cf(FLAG_MOD_ACT | FLAG_CHORD_PENDING);
@@ -8310,13 +9090,13 @@ fn storePendingChord(
     while (i < members.len) : (i += 1) {
         const vk = members[i];
         cancelKeyTimers(vk);
-        activeModRemove(vk);
+        remove_active_virtual_modifier(vk);
         if (kbGet(vk)) |kd| {
             kd.sf(FLAG_CHORD_PENDING);
         } else if (vk == triggerVK) {
             var nd = KeyData{};
             nd.downTime = currentTime;
-            nd.bf(FLAG_IS_MOD, triggerIsVirtualMod);
+            nd.bf(RUNTIME_CURRENT_VK_IS_ACTIVE_MODIFIER, triggerIsVirtualMod);
             nd.bf(FLAG_QUIET, inQuietPeriod);
             nd.sf(FLAG_CHORD_PENDING);
             kbPut(vk, nd);
@@ -8343,7 +9123,7 @@ fn fireChordEntryFromMembers(chord: ChordHotEntry, members: []const i32, trigger
 
     for (members) |vk| cancelKeyTimers(vk);
     for (members) |vk| {
-        activeModRemove(vk);
+        remove_active_virtual_modifier(vk);
         if (kbGet(vk)) |kd| {
             kd.sf(FLAG_COMBO_TRIG | FLAG_MOD_TRIG);
             kd.cf(FLAG_MOD_ACT | FLAG_CHORD_PENDING);
@@ -8398,7 +9178,7 @@ fn resolvePendingChordOnKeyDown(keyVK: i32, currentTime: i64, isVirtualModKey: b
                 if (!kbContains(keyVK)) {
                     var nd = KeyData{};
                     nd.downTime = currentTime;
-                    nd.bf(FLAG_IS_MOD, isVirtualModKey);
+                    nd.bf(RUNTIME_CURRENT_VK_IS_ACTIVE_MODIFIER, isVirtualModKey);
                     nd.bf(FLAG_QUIET, inQuietPeriod);
                     nd.sf(FLAG_CHORD_PENDING);
                     kbPut(keyVK, nd);
@@ -8437,6 +9217,9 @@ fn bufferKeyDown(keyVK: i32) void {
 
     // SECTION 2: Load per-key gate metadata
     const vki: usize = @intCast(keyVK);
+    // A new physical press starts a new hold-delivery lifetime.  Do not reset
+    // this for autorepeat/re-entrant key-downs while the key is still buffered.
+    if (kbGet(keyVK) == null) g_holdCallbackQueued[vki] = false;
     const gate = &activeContextDerived().gate[vki];
     const kdPlan = gate.kdPlan;
     var hotFlags = g_hotFlags;
@@ -8446,25 +9229,25 @@ fn bufferKeyDown(keyVK: i32) void {
     const hotRecentKeyUp = (hotFlags & HF_RECENT_KEYUP) != 0;
 
     const kdAction = gate.kdAction;
-    if (pendingRollActive() and (pendingRollContains(keyVK) or kdAction == .phys_mod or g_physicalModMaskActive)) {
+    if (pendingRollActive() and (pendingRollContains(keyVK) or kdAction == .phys_mod or g_any_physical_modifiers_active)) {
         pendingRollMaterialize();
     }
-    if (pendingSoloActive() and (g_pendingSoloVK == keyVK or kdAction == .phys_mod or g_physicalModMaskActive)) {
+    if (pendingSoloActive() and (g_pendingSoloVK == keyVK or kdAction == .phys_mod or g_any_physical_modifiers_active)) {
         pendingSoloMaterialize();
     }
 
     if (kdAction == .phys_mod) {
-        const bit: u16 = @intCast(g_keyPhysBit[vki]);
+        const bit: u16 = @intCast(g_vk_is_physical_modifier[vki]);
         if (bit != 0) {
             prof_time = 0; // stop timing
-            _ = applyPhysicalModifierEvent(keyVK, true);
+            _ = apply_physical_modifier_event(keyVK, true);
             return;
         }
     }
 
-    if (g_physicalModMaskActive) {
+    if (g_any_physical_modifiers_active) {
         prof_time = 0; // stop timing
-        sendKeyDirect(keyVK, computeHotkeyModBitmask());
+        sendKeyDirect(keyVK, compute_modifiers_to_send());
         return;
     }
 
@@ -8475,7 +9258,7 @@ fn bufferKeyDown(keyVK: i32) void {
         rfClear(RF_TYPING); // FSM-lite
     }
     const inQuietPeriod = (hotFlags & HF_TYPING) != 0;
-    if (resolvePendingChordOnKeyDown(keyVK, currentTime, (kdPlan & KDP_IS_MODIFIER) != 0, inQuietPeriod)) {
+    if (resolvePendingChordOnKeyDown(keyVK, currentTime, (kdPlan & KDP_HAS_VIRTUAL_MODIFIER_ROLE) != 0, inQuietPeriod)) {
         return;
     }
     // The second press of a double-tap always lands inside the typing quiet
@@ -8514,7 +9297,7 @@ fn bufferKeyDown(keyVK: i32) void {
         }
     }
     if (pendingRollActive()) {
-        const incomingIsModRoll = (kdPlan & KDP_IS_MODIFIER) != 0;
+        const incomingIsModRoll = (kdPlan & KDP_HAS_VIRTUAL_MODIFIER_ROLE) != 0;
         if (!incomingIsModRoll and
             (g_runtimeFlags & RB_PENDING_PAIR_CLEAN) == 0 and
             kdAction != .sys_mod and
@@ -8541,7 +9324,7 @@ fn bufferKeyDown(keyVK: i32) void {
         const pendingFlags = g_pendingSoloFlags;
         const incomingProps = gate.props;
         const pendingIsMod = (pendingFlags & PSF_IS_MOD) != 0;
-        const incomingIsMod = (incomingProps & KP_IS_MODIFIER) != 0;
+        const incomingIsMod = (incomingProps & KP_HAS_VIRTUAL_MODIFIER_ROLE) != 0;
         if ((pendingFlags & PSF_IS_MOD) == 0 and
             !incomingIsMod and
             (g_runtimeFlags & RB_PENDING_PAIR_CLEAN) == 0 and
@@ -8581,7 +9364,7 @@ fn bufferKeyDown(keyVK: i32) void {
             pendingModKd.downTime = g_pendingSoloDownTime;
             pendingModKd.sf(FLAG_INTERFERING);
             pendingModKd.bf(FLAG_QUIET, (pendingFlags & PSF_QUIET) != 0);
-            pendingModKd.sf(FLAG_IS_MOD);
+            pendingModKd.sf(RUNTIME_CURRENT_VK_IS_ACTIVE_MODIFIER);
             pendingSoloDeactivate();
             kbPut(pendingVK, pendingModKd);
             ordAppend(pendingVK);
@@ -8594,7 +9377,7 @@ fn bufferKeyDown(keyVK: i32) void {
             incomingModRollKd.downTime = currentTime;
             incomingModRollKd.sf(FLAG_INTERFERING);
             incomingModRollKd.bf(FLAG_QUIET, inQuietPeriod);
-            incomingModRollKd.bf(FLAG_IS_MOD, incomingIsMod);
+            incomingModRollKd.bf(RUNTIME_CURRENT_VK_IS_ACTIVE_MODIFIER, incomingIsMod);
             kbPut(keyVK, incomingModRollKd);
             ordAppend(keyVK);
             if (g_ordLen > @as(usize, @intCast(g_MaxBufferSize))) {
@@ -8789,7 +9572,7 @@ fn bufferKeyDown(keyVK: i32) void {
                 return;
             }
             sendKeyDirect(keyVK, 0);
-            if ((kdPlan & KDP_IS_MODIFIER) != 0 and g_unrelModCount > 0) {
+            if ((kdPlan & KDP_HAS_VIRTUAL_MODIFIER_ROLE) != 0 and g_unrelModCount > 0) {
                 g_unrelModCount -= 1;
                 rfSetIf(RF_UNREL_MODS, g_unrelModCount != 0);
             }
@@ -8814,7 +9597,7 @@ fn bufferKeyDown(keyVK: i32) void {
     if (kdModContam and g_unrelModCount > 0) {
         for (0..g_kbLen) |_csi| {
             const _ekd = &g_kbData[_csi];
-            if (_ekd.isModifier() and !_ekd.isReleased() and
+            if (_ekd.isRuntimeModifier() and !_ekd.isReleased() and
                 _ekd.actionType == .undecided and
                 g_kbVK[_csi] != keyVK)
             {
@@ -8827,15 +9610,15 @@ fn bufferKeyDown(keyVK: i32) void {
         if (keyVK >= 0 and keyVK < 256 and g_keyVKIgnored[@intCast(keyVK)]) return;
     }
     if (kdAction == .sys_mod) {
-        const keySysBit: i32 = @intCast(g_keySysBit[vki]);
+        const keySysBit: i32 = @intCast(g_vk_windows_facing_modifiers[vki]);
         if (keySysBit != 0) {
             @branchHint(.unlikely);
-            g_modBitmask |= keySysBit;
+            g_active_physical_and_windows_facing_modifiers |= keySysBit;
             rfSet(RF_SYS_MODS); // FSM-lite
             return;
         }
     }
-    if (g_modBitmask > 0) {
+    if (g_active_physical_and_windows_facing_modifiers > 0) {
         @branchHint(.unlikely);
         return;
     }
@@ -8867,6 +9650,7 @@ fn bufferKeyDown(keyVK: i32) void {
         cleanUnrelMods >= 2 and
         kdIntentionalChord and
         (scanFlags & KFS_KD_INTENTIONAL_CHORD) != 0;
+    prepareStructuralIncomingChordContext(keyVK);
     if (runInstantScan) {
         const pkVK = firstUnreleasedInstantPrimaryForSecondary(keyVK);
         if (pkVK != 0) {
@@ -8876,7 +9660,7 @@ fn bufferKeyDown(keyVK: i32) void {
         }
     }
     const isModKey = (kdPlan & (KDP_PHYS_MOD | KDP_SYS_MOD)) != 0; // physical/system only: virtual mods must NOT block chord eligibility
-    const isVirtualModKey = (kdPlan & KDP_IS_MODIFIER) != 0;
+    const isVirtualModKey = (kdPlan & KDP_HAS_VIRTUAL_MODIFIER_ROLE) != 0;
     const modType: i8 = modTypeFromKdPlan(kdPlan);
     const intentionalChordRuntimePossible =
         kdIntentionalChord and
@@ -8897,7 +9681,7 @@ fn bufferKeyDown(keyVK: i32) void {
         !keyExists and
         chordPrefixPairPossibleForIncoming(keyVK);
     const overlapBaseEligible =
-        g_activeModCount == 0 and
+        g_active_virtual_modifier_count == 0 and
         g_kbLen != 0 and
         unrelMods == 0 and
         !isModKey and
@@ -8948,7 +9732,7 @@ fn bufferKeyDown(keyVK: i32) void {
     if (g_cleanUnrelModCount > 0 and
         g_unrelModCount == g_cleanUnrelModCount and
         !keyExists and
-        g_activeModCount == 0 and
+        g_active_virtual_modifier_count == 0 and
         !intentionalChordRuntimePossible and
         !runComboScan and
         !runInstantScan and
@@ -8960,7 +9744,7 @@ fn bufferKeyDown(keyVK: i32) void {
             var foundCleanMod = false;
             for (0..g_kbLen) |i| {
                 const ekd = &g_kbData[i];
-                if (ekd.isModifier() and !ekd.isReleased() and !ekd.hasInterferingKeys()) {
+                if (ekd.isRuntimeModifier() and !ekd.isReleased() and !ekd.hasInterferingKeys()) {
                     foundCleanMod = true;
                     // A same-type virtual-mod partner is not ordinary rollover typing.
                     // Let it reach the dedicated SAME-MODIFIER section below, which
@@ -8977,7 +9761,7 @@ fn bufferKeyDown(keyVK: i32) void {
         } else {
             for (0..g_kbLen) |i| {
                 const ekd = &g_kbData[i];
-                if (ekd.isModifier() and !ekd.isReleased() and !ekd.hasInterferingKeys()) {
+                if (ekd.isRuntimeModifier() and !ekd.isReleased() and !ekd.hasInterferingKeys()) {
                     if (isVirtualModKey and activeContextDerived().keyModType[@intCast(g_kbVK[i])] == modType) {
                         allCleanModsUnderThreshold = false;
                         break;
@@ -9013,7 +9797,7 @@ fn bufferKeyDown(keyVK: i32) void {
             ndCleanModRoll.downTime = currentTime;
             ndCleanModRoll.sf(FLAG_INTERFERING);
             ndCleanModRoll.bf(FLAG_QUIET, inQuietPeriod);
-            ndCleanModRoll.bf(FLAG_IS_MOD, isVirtualModKey);
+            ndCleanModRoll.bf(RUNTIME_CURRENT_VK_IS_ACTIVE_MODIFIER, isVirtualModKey);
             kbPut(keyVK, ndCleanModRoll);
             ordAppend(keyVK);
             if (g_ordLen > @as(usize, @intCast(g_MaxBufferSize))) {
@@ -9090,7 +9874,7 @@ fn bufferKeyDown(keyVK: i32) void {
                 {
                     for (heldVKs[0..heldCount]) |v| cancelKeyTimers(v);
                     for (heldVKs[0..heldCount]) |v| {
-                        activeModRemove(v);
+                        remove_active_virtual_modifier(v);
                         if (kbGet(v)) |kd| {
                             kd.sf(FLAG_COMBO_TRIG | FLAG_MOD_TRIG);
                             kd.cf(FLAG_MOD_ACT | FLAG_CHORD_PENDING);
@@ -9114,7 +9898,7 @@ fn bufferKeyDown(keyVK: i32) void {
                     const nameRef = keyNameRef orelse return;
                     for (heldVKs[0..heldCount]) |v| cancelKeyTimers(v);
                     for (heldVKs[0..heldCount]) |v| {
-                        activeModRemove(v);
+                        remove_active_virtual_modifier(v);
                         if (kbGet(v)) |kd| {
                             kd.sf(FLAG_COMBO_TRIG | FLAG_MOD_TRIG);
                             kd.cf(FLAG_MOD_ACT | FLAG_CHORD_PENDING);
@@ -9148,12 +9932,12 @@ fn bufferKeyDown(keyVK: i32) void {
             for (0..g_kbLen) |i| {
                 const evk = g_kbVK[i];
                 const ekd = &g_kbData[i];
-                if (!ekd.isModifier() or ekd.isReleased() or ekd.hasInterferingKeys()) continue;
+                if (!ekd.isRuntimeModifier() or ekd.isReleased() or ekd.hasInterferingKeys()) continue;
                 if (hmCount < 5) {
                     heldModVKs[hmCount] = evk;
                     hmCount += 1;
                 }
-                modMask |= @intCast(g_keyModMask[@intCast(evk)]);
+                modMask |= @intCast(g_key_virtual_modifier_mask[@intCast(evk)]);
             }
             var isExternalChordPrefix = false;
             const runtime_chords = activeRuntimeChords();
@@ -9179,7 +9963,7 @@ fn bufferKeyDown(keyVK: i32) void {
                 var isSameModPartner = false;
                 if (isModKey) {
                     for (0..g_kbLen) |i| {
-                        if (g_kbData[i].isModifier() and !g_kbData[i].isReleased() and
+                        if (g_kbData[i].isRuntimeModifier() and !g_kbData[i].isReleased() and
                             activeContextDerived().keyModType[@intCast(g_kbVK[i])] == modType)
                         {
                             isSameModPartner = true;
@@ -9190,7 +9974,7 @@ fn bufferKeyDown(keyVK: i32) void {
                 if (!isModKey or isSameModPartner) {
                     for (0..g_kbLen) |i| {
                         const ekd = &g_kbData[i];
-                        if (ekd.isModifier() and !ekd.isReleased() and
+                        if (ekd.isRuntimeModifier() and !ekd.isReleased() and
                             !ekd.modifierActivated() and !ekd.hasInterferingKeys())
                             cancelKeyTimers(g_kbVK[i]);
                     }
@@ -9200,7 +9984,7 @@ fn bufferKeyDown(keyVK: i32) void {
                     }
                     for (0..g_kbLen) |i| {
                         const ekd = &g_kbData[i];
-                        if (ekd.isModifier() and !ekd.isReleased()) {
+                        if (ekd.isRuntimeModifier() and !ekd.isReleased()) {
                             ekd.sf(FLAG_MOD_TRIG);
                             ekd.actionType = .modifier_used;
                         }
@@ -9221,7 +10005,7 @@ fn bufferKeyDown(keyVK: i32) void {
                 const ekd = &g_kbData[i];
                 if (!ekd.isReleased()) {
                     if (secondaryAllowsPrimaryFast(evk, keyVK, runComboScan, runInstantScan)) break :blk true;
-                    if (isModKey and ekd.isModifier()) break :blk true;
+                    if (isModKey and ekd.isRuntimeModifier()) break :blk true;
                 }
             }
             break :blk false;
@@ -9235,7 +10019,7 @@ fn bufferKeyDown(keyVK: i32) void {
             timerClear();
             for (0..g_kbLen) |i| {
                 const ekd = &g_kbData[i];
-                if (ekd.isModifier() and !ekd.isReleased() and !ekd.hasInterferingKeys()) {
+                if (ekd.isRuntimeModifier() and !ekd.isReleased() and !ekd.hasInterferingKeys()) {
                     if (g_cleanUnrelModCount > 0) g_cleanUnrelModCount -= 1;
                 }
                 ekd.sf(FLAG_INTERFERING);
@@ -9246,7 +10030,7 @@ fn bufferKeyDown(keyVK: i32) void {
             var nd = KeyData{};
             nd.downTime = currentTime;
             nd.sf(FLAG_INTERFERING | FLAG_QUIET);
-            nd.bf(FLAG_IS_MOD, isVirtualModKey);
+            nd.bf(RUNTIME_CURRENT_VK_IS_ACTIVE_MODIFIER, isVirtualModKey);
             kbPut(keyVK, nd);
             ordAppend(keyVK);
             if (g_ordLen > @as(usize, @intCast(g_MaxBufferSize))) {
@@ -9262,7 +10046,7 @@ fn bufferKeyDown(keyVK: i32) void {
         var otherUnrel: i32 = 0;
         for (0..g_kbLen) |i| {
             const ekd = &g_kbData[i];
-            if (ekd.isModifier() and !ekd.isReleased() and !ekd.inComboRepeatMode()) otherUnrel += 1;
+            if (ekd.isRuntimeModifier() and !ekd.isReleased() and !ekd.inComboRepeatMode()) otherUnrel += 1;
         }
         if (otherUnrel == 0) {
             const s: usize = @intCast(keyVK);
@@ -9314,9 +10098,9 @@ fn bufferKeyDown(keyVK: i32) void {
         }
     }
 
-    if (g_activeModCount > 0) {
-        if (g_activeModCount == 1) {
-            const modVK = g_activeMods[0];
+    if (g_active_virtual_modifier_count > 0) {
+        if (g_active_virtual_modifier_count == 1) {
+            const modVK = g_active_virtual_modifiers_by_vk[0];
             if (kbGet(modVK)) |md| {
                 if (!md.isReleased()) {
                     if (secondaryAllowsPrimaryFast(modVK, keyVK, runComboScan, runInstantScan)) {
@@ -9350,8 +10134,8 @@ fn bufferKeyDown(keyVK: i32) void {
             }
         }
         if (isVirtualModKey) {
-            for (0..@intCast(g_activeModCount)) |i| {
-                const amod = g_activeMods[i];
+            for (0..@intCast(g_active_virtual_modifier_count)) |i| {
+                const amod = g_active_virtual_modifiers_by_vk[i];
                 if (kbGet(amod)) |amd| {
                     if (runComboScan and !amd.isReleased() and comboPrimaryAllowedForSecondary(amod, keyVK)) {
                         const pkN = cachedNameFromVK(amod) orelse continue;
@@ -9362,30 +10146,30 @@ fn bufferKeyDown(keyVK: i32) void {
                 }
             }
             var modTypeActive = false;
-            for (0..@intCast(g_activeModCount)) |i|
-                if (activeContextDerived().keyModType[@intCast(g_activeMods[i])] == modType) {
+            for (0..@intCast(g_active_virtual_modifier_count)) |i|
+                if (activeContextDerived().keyModType[@intCast(g_active_virtual_modifiers_by_vk[i])] == modType) {
                     modTypeActive = true;
                     break;
                 };
             if (modTypeActive) {
                 sendModifiedKey(keyVK);
-                for (0..@as(usize, @intCast(g_activeModCount))) |ai| {
-                    if (kbGet(g_activeMods[ai])) |amd| {
+                for (0..@as(usize, @intCast(g_active_virtual_modifier_count))) |ai| {
+                    if (kbGet(g_active_virtual_modifiers_by_vk[ai])) |amd| {
                         amd.sf(FLAG_MOD_TRIG);
                         amd.cf(FLAG_MOD_ACT);
                         amd.actionType = .modifier_used;
                     }
                 }
-                activeModClear();
+                clear_active_virtual_modifiers();
                 return;
             }
-            activeModAdd(keyVK);
+            add_active_virtual_modifier(keyVK);
             if (kbGet(keyVK)) |ex| {
-                ex.sf(FLAG_IS_MOD | FLAG_MOD_ACT);
+                ex.sf(RUNTIME_CURRENT_VK_IS_ACTIVE_MODIFIER | FLAG_MOD_ACT);
             } else {
                 var nd4 = KeyData{};
                 nd4.downTime = currentTime;
-                nd4.sf(FLAG_IS_MOD | FLAG_MOD_ACT);
+                nd4.sf(RUNTIME_CURRENT_VK_IS_ACTIVE_MODIFIER | FLAG_MOD_ACT);
                 nd4.bf(FLAG_QUIET, inQuietPeriod);
                 kbPut(keyVK, nd4);
                 ordAppend(keyVK);
@@ -9393,14 +10177,14 @@ fn bufferKeyDown(keyVK: i32) void {
             return;
         }
         sendModifiedKey(keyVK);
-        for (0..@as(usize, @intCast(g_activeModCount))) |ai| {
-            if (kbGet(g_activeMods[ai])) |amd| {
+        for (0..@as(usize, @intCast(g_active_virtual_modifier_count))) |ai| {
+            if (kbGet(g_active_virtual_modifiers_by_vk[ai])) |amd| {
                 amd.sf(FLAG_MOD_TRIG);
                 amd.cf(FLAG_MOD_ACT);
                 amd.actionType = .modifier_used;
             }
         }
-        activeModClear();
+        clear_active_virtual_modifiers();
         return;
     }
 
@@ -9413,8 +10197,8 @@ fn bufferKeyDown(keyVK: i32) void {
     // immediately through the DLL send path.
     if (!isVirtualModKey and
         g_unrelModCount > 0 and
-        g_activeModCount == 0 and
-        g_modBitmask == 0 and
+        g_active_virtual_modifier_count == 0 and
+        g_active_physical_and_windows_facing_modifiers == 0 and
         !keyExists and
         !runComboScan and
         !runInstantScan)
@@ -9424,7 +10208,7 @@ fn bufferKeyDown(keyVK: i32) void {
         for (0..g_kbLen) |i| {
             const evk = g_kbVK[i];
             const ekd = &g_kbData[i];
-            if (!ekd.isModifier() or ekd.isReleased() or ekd.chordPending()) continue;
+            if (!ekd.isRuntimeModifier() or ekd.isReleased() or ekd.chordPending()) continue;
             if (ekd.hasInterferingKeys() or ekd.comboTriggered() or ekd.inQuietPeriod()) continue;
             if (ekd.modifierActivated() or ekd.modifierTriggered()) continue;
             if ((currentTime - ekd.downTime) < g_SingleKeyHoldThreshold) continue;
@@ -9437,7 +10221,7 @@ fn bufferKeyDown(keyVK: i32) void {
         if (heldCount > 0) {
             for (heldMods[0..heldCount]) |mv| {
                 cancelKeyTimers(mv);
-                activeModAdd(mv);
+                add_active_virtual_modifier(mv);
                 if (kbGet(mv)) |md| md.sf(FLAG_MOD_ACT);
             }
             sendModifiedKey(keyVK);
@@ -9447,7 +10231,7 @@ fn bufferKeyDown(keyVK: i32) void {
                     md.sf(FLAG_MOD_TRIG);
                     md.actionType = .modifier_used;
                 }
-                activeModRemove(mv);
+                remove_active_virtual_modifier(mv);
             }
             return;
         }
@@ -9463,7 +10247,7 @@ fn bufferKeyDown(keyVK: i32) void {
                 triggerInstantComboVK(evk, keyVK, pkN, currentTime);
                 return;
             }
-            if (ekd.isModifier() and !ekd.chordPending()) {
+            if (ekd.isRuntimeModifier() and !ekd.chordPending()) {
                 if (runComboScan and comboPrimaryAllowedForSecondary(evk, keyVK)) {
                     const pkN = cachedNameFromVK(evk) orelse return;
                     const nameRef = keyNameRef orelse return;
@@ -9471,13 +10255,13 @@ fn bufferKeyDown(keyVK: i32) void {
                     return;
                 }
                 if (!isVirtualModKey) {
-                    activeModAdd(evk);
+                    add_active_virtual_modifier(evk);
                     ekd.sf(FLAG_MOD_ACT);
                     sendModifiedKey(keyVK);
                     ekd.cf(FLAG_MOD_ACT);
                     ekd.sf(FLAG_MOD_TRIG);
                     ekd.actionType = .modifier_used;
-                    activeModRemove(evk);
+                    remove_active_virtual_modifier(evk);
                     return;
                 }
             }
@@ -9489,25 +10273,25 @@ fn bufferKeyDown(keyVK: i32) void {
             for (0..g_kbLen) |i| {
                 const evk = g_kbVK[i];
                 const ekd = &g_kbData[i];
-                if (!ekd.isModifier() or ekd.isReleased() or ekd.chordPending()) continue;
+                if (!ekd.isRuntimeModifier() or ekd.isReleased() or ekd.chordPending()) continue;
                 if (activeContextDerived().keyModType[@intCast(evk)] == modType) {
                     for (0..g_kbLen) |j| {
                         const e2 = &g_kbData[j];
-                        if (e2.isModifier() and !e2.isReleased()) {
+                        if (e2.isRuntimeModifier() and !e2.isReleased()) {
                             cancelKeyTimers(g_kbVK[j]);
-                            activeModAdd(g_kbVK[j]);
+                            add_active_virtual_modifier(g_kbVK[j]);
                             e2.sf(FLAG_MOD_ACT | FLAG_MOD_TRIG);
                         }
                     }
                     sendModifiedKey(keyVK);
                     for (0..g_kbLen) |jj| {
                         const e3 = &g_kbData[jj];
-                        if (e3.isModifier() and !e3.isReleased()) {
+                        if (e3.isRuntimeModifier() and !e3.isReleased()) {
                             e3.cf(FLAG_MOD_ACT);
                             e3.actionType = .modifier_used;
                         }
                     }
-                    activeModClear();
+                    clear_active_virtual_modifiers();
                     return;
                 }
             }
@@ -9516,13 +10300,13 @@ fn bufferKeyDown(keyVK: i32) void {
             for (0..g_kbLen) |i| {
                 const evk = g_kbVK[i];
                 const ekd = &g_kbData[i];
-                if (!ekd.isModifier() or ekd.isReleased() or ekd.modifierActivated() or ekd.chordPending()) continue;
+                if (!ekd.isRuntimeModifier() or ekd.isReleased() or ekd.modifierActivated() or ekd.chordPending()) continue;
                 if (activeContextDerived().keyModType[@intCast(evk)] != modType) continue;
                 const timeDiff = currentTime - ekd.downTime;
                 if (timeDiff < g_SingleKeyHoldThreshold) {
                     var nd5 = KeyData{};
                     nd5.downTime = currentTime;
-                    nd5.sf(FLAG_IS_MOD);
+                    nd5.sf(RUNTIME_CURRENT_VK_IS_ACTIVE_MODIFIER);
                     nd5.sameModPartnerVK = evk;
                     nd5.bf(FLAG_QUIET, inQuietPeriod);
                     kbPut(keyVK, nd5);
@@ -9536,12 +10320,12 @@ fn bufferKeyDown(keyVK: i32) void {
                     queueTimer(&tidBuf, tidH, remaining, 1, pkN, nameRef, currentTime);
                     return;
                 }
-                activeModAdd(evk);
+                add_active_virtual_modifier(evk);
                 ekd.sf(FLAG_MOD_ACT | FLAG_MOD_TRIG);
                 sendModifiedKey(keyVK);
                 ekd.cf(FLAG_MOD_ACT);
                 ekd.actionType = .modifier_used;
-                activeModRemove(evk);
+                remove_active_virtual_modifier(evk);
                 return;
             }
         }
@@ -9550,7 +10334,7 @@ fn bufferKeyDown(keyVK: i32) void {
     // UNIVERSAL FALLTHROUGH — add key to buffer
     var nd6 = KeyData{};
     nd6.downTime = currentTime;
-    nd6.bf(FLAG_IS_MOD, isVirtualModKey);
+    nd6.bf(RUNTIME_CURRENT_VK_IS_ACTIVE_MODIFIER, isVirtualModKey);
     nd6.bf(FLAG_QUIET, inQuietPeriod);
     kbPut(keyVK, nd6);
     ordAppend(keyVK);
@@ -9591,11 +10375,11 @@ fn bufferKeyUp(keyVK: i32) void {
 
         var releasedRepeatMod = false;
         if (kbGet(keyVK)) |kd| {
-            const wasUnreleasedMod = kd.isModifier() and !kd.isReleased();
+            const wasUnreleasedMod = kd.isRuntimeModifier() and !kd.isReleased();
             const owedModifierUp = kd.modifierActivated();
 
             if (owedModifierUp) {
-                const modVK = g_keyModVK[vki];
+                const modVK = g_virtual_modifier_output_vk[vki];
                 if (modVK != 0) {
                     ringReset();
                     ringAddKey(modVK, KEYEVENTF_KEYUP);
@@ -9604,8 +10388,8 @@ fn bufferKeyUp(keyVK: i32) void {
                 }
             }
 
-            if (g_activeModCount != 0) {
-                activeModRemove(keyVK);
+            if (g_active_virtual_modifier_count != 0) {
+                remove_active_virtual_modifier(keyVK);
             }
 
             if (wasUnreleasedMod) {
@@ -9634,14 +10418,14 @@ fn bufferKeyUp(keyVK: i32) void {
         // actually held. The repeat worker remains the only path allowed to emit
         // repeat taps, and it gates on physicalKeyDownVK immediately before send.
         _ = first_emit_was_pending;
-        const modVK = g_keyModVK[vki];
+        const modVK = g_virtual_modifier_output_vk[vki];
         if (!releasedRepeatMod and activeModContains(keyVK) and modVK != 0) {
             ringReset();
             ringAddKey(modVK, KEYEVENTF_KEYUP);
             const ku169_start = profStartSect();
             ringSend();
             profSpan(KU_BASE + 169, ku169_start); // ku169 span: repeat keyup ringSend modifier up
-            activeModRemove(keyVK);
+            remove_active_virtual_modifier(keyVK);
             restoreSystemModBitmaskFromPhysicalState();
         }
         return;
@@ -9701,7 +10485,7 @@ fn bufferKeyUp(keyVK: i32) void {
             }
         }
         const fastEnough = durationFastEnough(currentTime, g_pendingSoloDownTime);
-        const soloHasHold = activeContextDerived().holdCallback[vki] != -1;
+        const soloHasHold = callbackIdUsable(effectiveHoldCallbackId(@intCast(keyVK)));
         const soloHoldInterfered = soloHasHold and holdHadLaterPhysicalKeyDown(keyVK);
         if (!soloOverMax and ((g_pendingSoloFlags & PSF_INTERFERING) != 0 or soloHoldInterfered or fastEnough)) {
             if (g_keyNamePtr[vki]) |keyNameRefPending| {
@@ -9724,22 +10508,22 @@ fn bufferKeyUp(keyVK: i32) void {
     const kuAction = gate.kuAction;
 
     if (kuAction == .phys_mod_up) {
-        const physicalBit: u16 = @intCast(g_keyPhysBit[vki]);
+        const physicalBit: u16 = @intCast(g_vk_is_physical_modifier[vki]);
         if (physicalBit != 0) {
-            _ = applyPhysicalModifierEvent(keyVK, false);
+            _ = apply_physical_modifier_event(keyVK, false);
             return;
         }
     } else if (kuAction == .sys_mod_up) {
-        const keySysBit: i32 = @intCast(g_keySysBit[vki]);
+        const keySysBit: i32 = @intCast(g_vk_windows_facing_modifiers[vki]);
         if (keySysBit != 0) {
             @branchHint(.unlikely);
-            g_modBitmask &= ~keySysBit;
-            rfSetIf(RF_SYS_MODS, g_modBitmask != 0); // FSM-lite
+            g_active_physical_and_windows_facing_modifiers &= ~keySysBit;
+            rfSetIf(RF_SYS_MODS, g_active_physical_and_windows_facing_modifiers != 0); // FSM-lite
             return;
         }
     }
 
-    if (g_physicalModMaskActive) {
+    if (g_any_physical_modifiers_active) {
         return;
     }
 
@@ -9805,12 +10589,12 @@ fn bufferKeyUp(keyVK: i32) void {
                 keyData.sf(FLAG_MOD_TRIG);
                 keyData.actionType = .modifier_used;
                 keyData.sameModPartnerVK = 0;
-                activeModAdd(partnerVK);
+                add_active_virtual_modifier(partnerVK);
                 pt.sf(FLAG_MOD_ACT | FLAG_MOD_TRIG);
                 sendModifiedKey(keyVK);
                 pt.cf(FLAG_MOD_ACT);
                 pt.actionType = .modifier_used;
-                activeModRemove(partnerVK);
+                remove_active_virtual_modifier(partnerVK);
 
                 _ = kbRemove(keyVK);
                 removeFromKeyOrder(keyVK);
@@ -9825,8 +10609,8 @@ fn bufferKeyUp(keyVK: i32) void {
         g_ordLen == 1 and
         ordAt(0) == keyVK and
         g_unreleasedKeyCount == 1 and
-        g_activeModCount == 0 and
-        g_modBitmask == 0 and
+        g_active_virtual_modifier_count == 0 and
+        g_active_physical_and_windows_facing_modifiers == 0 and
         keyData.actionType == .undecided and
         !keyData.hasInterferingKeys() and
         !keyData.comboTriggered() and
@@ -9838,7 +10622,7 @@ fn bufferKeyUp(keyVK: i32) void {
         durationFastEnough(currentTime, keyData.downTime))
     {
         if (g_keyNamePtr[vki]) |keyNameRefSolo| {
-            const isModKeySoloUp = keyData.isModifier();
+            const isModKeySoloUp = keyData.isRuntimeModifier();
             markKeyReleased(keyVK, keyData);
             keyData.releaseTime = currentTime;
             keyData.actionType = .tap;
@@ -9901,15 +10685,15 @@ fn bufferKeyUp(keyVK: i32) void {
     const kuRetroTimer = (kuMask & KU_RETRO_TIMER) != 0;
     const kuFastTapPlain = (kuMask & KU_FAST_TAP_PLAIN) != 0;
 
-    if (g_activeModCount != 0) {
-        activeModRemove(keyVK);
+    if (g_active_virtual_modifier_count != 0) {
+        remove_active_virtual_modifier(keyVK);
     }
-    if (g_modBitmask > 0) {
+    if (g_active_physical_and_windows_facing_modifiers > 0) {
         @branchHint(.unlikely);
         return;
     }
     if (kuSameMod or kuRetroModAct or kuRetroTimer or kuModifierLogic) rebuildUnreleasedModifierCounters();
-    const isModKey = (gate.kdPlan & KDP_IS_MODIFIER) != 0;
+    const isModKey = (gate.kdPlan & KDP_HAS_VIRTUAL_MODIFIER_ROLE) != 0;
     const modType: i8 = modTypeFromKdPlan(gate.kdPlan);
     markKeyReleased(keyVK, keyData);
     if ((kuMask & KU_NEEDS_ACTIVE_PRIMARY_SYNC) != 0) {
@@ -9921,7 +10705,7 @@ fn bufferKeyUp(keyVK: i32) void {
     // counted in g_unrelModCount when buffered: it represents the prospective
     // output key, not another held modifier. Do not decrement the primary's
     // count when that secondary releases before the same-mod timer fires.
-    if (keyData.isModifier() and keyData.sameModPartnerVK == 0 and g_unrelModCount > 0) {
+    if (keyData.isRuntimeModifier() and keyData.sameModPartnerVK == 0 and g_unrelModCount > 0) {
         g_unrelModCount -= 1;
         if (!keyData.hasInterferingKeys() and g_cleanUnrelModCount > 0)
             g_cleanUnrelModCount -= 1;
@@ -10028,7 +10812,7 @@ fn bufferKeyUp(keyVK: i32) void {
         for (0..g_kbLen) |i| {
             const evk = g_kbVK[i];
             const ekd = &g_kbData[i];
-            if (!ekd.isModifier() or ekd.isReleased() or ekd.chordPending()) continue;
+            if (!ekd.isRuntimeModifier() or ekd.isReleased() or ekd.chordPending()) continue;
             if (ekd.downTime >= keyData.downTime) continue;
             if (ekd.inQuietPeriod() or keyData.inQuietPeriod()) continue;
             unrelModsBeforeKey += 1;
@@ -10044,7 +10828,7 @@ fn bufferKeyUp(keyVK: i32) void {
             if (isDiffTypeMod and
                 !secondaryAllowsPrimaryFast(singleModVK, keyVK, runComboScan, runInstantScan))
             {
-                const modMask: u16 = @intCast(g_keyModMask[@intCast(singleModVK)]);
+                const modMask: u16 = @intCast(g_key_virtual_modifier_mask[@intCast(singleModVK)]);
                 const ku179_start = profStartSect();
                 const ku179_matched = queueCompiledHotkeyIfMatchedSingleModProfiled(keyVK, modMask, true);
                 profSpan(KU_BASE + 179, ku179_start); // ku179 span: single-mod compiled hotkey match
@@ -10058,8 +10842,8 @@ fn bufferKeyUp(keyVK: i32) void {
                 }
 
                 const ku221_start = profStartSect();
-                activeModRemove(singleModVK);
-                profSpan(KU_BASE + 221, ku221_start); // ku221 span: single-mod activeModRemove(singleModVK)
+                remove_active_virtual_modifier(singleModVK);
+                profSpan(KU_BASE + 221, ku221_start); // ku221 span: single-mod remove_active_virtual_modifier(singleModVK)
                 const ku182_start = profStartSect();
                 cancelKeyTimers(singleModVK);
                 profSpan(KU_BASE + 182, ku182_start); // ku182 span: single-mod cancelKeyTimers(singleModVK)
@@ -10102,7 +10886,7 @@ fn bufferKeyUp(keyVK: i32) void {
         for (0..g_kbLen) |i| {
             const evk = g_kbVK[i];
             const ekd = &g_kbData[i];
-            if (!ekd.isModifier() or ekd.isReleased() or ekd.downTime >= keyData.downTime) continue;
+            if (!ekd.isRuntimeModifier() or ekd.isReleased() or ekd.downTime >= keyData.downTime) continue;
             // Quiet-origin modifier-role keys are protected typing, not
             // fallback modifiers. This prevents the "a+s+e" tail of "please"
             // from becoming Ctrl+Shift+E while preserving idle-origin gestures.
@@ -10142,7 +10926,7 @@ fn bufferKeyUp(keyVK: i32) void {
                 profSpan(KU_BASE + 185, ku185_start); // ku185 span: multi-mod cancelKeyTimers loop
                 var multiModMask: u16 = 0;
                 for (quickMods[0..qmCount]) |qvk| {
-                    multiModMask |= @intCast(g_keyModMask[@intCast(qvk)]);
+                    multiModMask |= @intCast(g_key_virtual_modifier_mask[@intCast(qvk)]);
                 }
                 for (quickMods[0..qmCount]) |qvk| {
                     if (kbGet(qvk)) |qm| {
@@ -10181,7 +10965,7 @@ fn bufferKeyUp(keyVK: i32) void {
                 profSpan(KU_BASE + 188, ku188_start); // ku188 span: chord cancelKeyTimers loop
                 var chordModMask: u16 = 0;
                 for (chordMods[0..chordCount]) |qvk| {
-                    chordModMask |= @intCast(g_keyModMask[@intCast(qvk)]);
+                    chordModMask |= @intCast(g_key_virtual_modifier_mask[@intCast(qvk)]);
                 }
                 for (chordMods[0..chordCount]) |qvk| {
                     cancelKeyTimers(qvk);
@@ -10220,7 +11004,7 @@ fn bufferKeyUp(keyVK: i32) void {
                 ringAddKey(modVK, KEYEVENTF_KEYUP);
                 ringSend();
             }
-            activeModRemove(keyVK);
+            remove_active_virtual_modifier(keyVK);
             keyData.cf(FLAG_MOD_ACT | FLAG_MOD_TRIG);
         }
 
@@ -10239,7 +11023,7 @@ fn bufferKeyUp(keyVK: i32) void {
                 const ekd = &g_kbData[i];
                 if (evk == keyVK or ekd.isReleased()) continue;
                 totalUnrel += 1;
-                if (ekd.isModifier() and !ekd.chordPending() and ekd.modifierActivated() and omhCount < 8) {
+                if (ekd.isRuntimeModifier() and !ekd.chordPending() and ekd.modifierActivated() and omhCount < 8) {
                     otherModsHeld[omhCount] = evk;
                     omhCount += 1;
                 }
@@ -10248,14 +11032,14 @@ fn bufferKeyUp(keyVK: i32) void {
                 for (0..g_kbLen) |i| {
                     const evk = g_kbVK[i];
                     const ekd = &g_kbData[i];
-                    if (evk == keyVK or ekd.isReleased() or !ekd.isModifier() or ekd.chordPending()) continue;
+                    if (evk == keyVK or ekd.isReleased() or !ekd.isRuntimeModifier() or ekd.chordPending()) continue;
                     if (isModKey and activeContextDerived().keyModType[@intCast(evk)] == modType) continue;
                     if (isModKey) continue;
                     const elapsed = currentTime - ekd.downTime;
                     if (elapsed >= g_SingleKeyHoldThreshold and !ekd.modifierActivated()) {
                         if (secondaryAllowsPrimaryFast(evk, keyVK, runComboScan, runInstantScan)) continue;
                         if (ekd.releaseTime > 0) continue;
-                        activeModAdd(evk);
+                        add_active_virtual_modifier(evk);
                         ekd.sf(FLAG_MOD_ACT | FLAG_MOD_TRIG);
                         if (omhCount < 8) {
                             otherModsHeld[omhCount] = evk;
@@ -10292,12 +11076,12 @@ fn bufferKeyUp(keyVK: i32) void {
             for (0..g_kbLen) |i| {
                 const evk = g_kbVK[i];
                 const ekd = &g_kbData[i];
-                if (evk == keyVK or !ekd.isModifier() or !ekd.isReleased() or ekd.chordPending()) continue;
+                if (evk == keyVK or !ekd.isRuntimeModifier() or !ekd.isReleased() or ekd.chordPending()) continue;
                 if (ekd.downTime >= keyData.downTime) continue;
                 if (activeContextDerived().keyModType[@intCast(evk)] != modType) continue;
                 if ((keyData.downTime - ekd.downTime) < g_ModifierGestureWindow) {
                     if (!activeModContains(evk)) {
-                        activeModAdd(evk);
+                        add_active_virtual_modifier(evk);
                         ekd.sf(FLAG_MOD_ACT);
                     }
                     ekd.sf(FLAG_MOD_TRIG);
@@ -10322,7 +11106,7 @@ fn bufferKeyUp(keyVK: i32) void {
                 const evk = g_kbVK[i];
                 const ekd = &g_kbData[i];
                 if (evk == keyVK) continue;
-                if (ekd.isModifier() and ekd.modifierActivated() and !ekd.modifierTriggered() and
+                if (ekd.isRuntimeModifier() and ekd.modifierActivated() and !ekd.modifierTriggered() and
                     !ekd.isReleased() and @abs(ekd.downTime - kdR.downTime) < g_ModifierGestureWindow) smCount += 1;
             }
             if (smCount > 0) {
@@ -10384,7 +11168,17 @@ fn bufferKeyUp(keyVK: i32) void {
             profSpan(KU_BASE + 204, ku204_start); // ku204 span: interfering/short tap processQueueAfterKeyUp
             return;
         }
-        if (duration > g_MaxHoldThreshold) {
+        // Max-hold suppression is a solo-hold policy only. Once this key has
+        // participated in a combo/chord or activated a modifier chain, its
+        // later release must still resolve the chain even if it was held for
+        // longer than the solo threshold. This preserves the configured
+        // modifier path for long-held-modifier + W (for example, Ctrl+W).
+        if (duration > g_MaxHoldThreshold and
+            g_kbLen == 1 and
+            !kdF.comboTriggered() and
+            !kdF.modifierTriggered() and
+            !kdF.modifierActivated() and
+            !kdF.hasInterferingKeys()) {
             kdF.actionType = if (g_MaxThresholdSupress) .none else .tap;
             const ku205_start = profStartSect();
             processQueueAfterKeyUp();
@@ -10408,7 +11202,7 @@ fn bufferKeyUp(keyVK: i32) void {
         for (0..g_kbLen) |i| {
             const evk = g_kbVK[i];
             const ekd = &g_kbData[i];
-            if (evk != keyVK and ekd.isModifier() and !ekd.chordPending() and !ekd.isReleased()) {
+            if (evk != keyVK and ekd.isRuntimeModifier() and !ekd.chordPending() and !ekd.isReleased()) {
                 const ku208_start = profStartSect();
                 processQueueAfterKeyUp();
                 profSpan(KU_BASE + 208, ku208_start); // ku208 span: other-homerow-mod processQueueAfterKeyUp
@@ -10427,7 +11221,7 @@ fn bufferKeyUp(keyVK: i32) void {
         for (0..g_kbLen) |i| {
             const evk = g_kbVK[i];
             const ekd = &g_kbData[i];
-            if (!ekd.isModifier() or ekd.isReleased() or ekd.chordPending()) continue;
+            if (!ekd.isRuntimeModifier() or ekd.isReleased() or ekd.chordPending()) continue;
             if (secondaryAllowsPrimaryFast(evk, keyVK, runComboScan, runInstantScan)) continue;
             if ((currentTime - ekd.downTime) < g_SingleKeyHoldThreshold) continue;
             if (mtaCount < 8) {
@@ -10439,7 +11233,7 @@ fn bufferKeyUp(keyVK: i32) void {
             const ku209_start = profStartSect();
             for (mta[0..mtaCount]) |mv| {
                 if (!activeModContains(mv)) {
-                    activeModAdd(mv);
+                    add_active_virtual_modifier(mv);
                     if (kbGet(mv)) |mm| mm.sf(FLAG_MOD_ACT);
                 }
                 if (kbGet(mv)) |mm| mm.sf(FLAG_MOD_TRIG);
@@ -10475,7 +11269,7 @@ fn bufferKeyUp(keyVK: i32) void {
             for (0..g_kbLen) |i| {
                 const evk = g_kbVK[i];
                 const ekd = &g_kbData[i];
-                if (!ekd.isModifier() or ekd.isReleased() or ekd.modifierActivated() or ekd.chordPending()) continue;
+                if (!ekd.isRuntimeModifier() or ekd.isReleased() or ekd.modifierActivated() or ekd.chordPending()) continue;
                 if (secondaryAllowsPrimaryFast(evk, keyVK, runComboScan, runInstantScan)) continue;
                 if ((currentTime - ekd.downTime) >= g_SingleKeyHoldThreshold) continue;
                 const rem = @as(i32, @intFromFloat(@as(f64, @floatFromInt(g_SingleKeyHoldThreshold - (currentTime - ekd.downTime))) * g_qpcToMs));
@@ -10493,8 +11287,8 @@ fn bufferKeyUp(keyVK: i32) void {
         g_kbLen == g_ordLen and
         g_ordLen > 0 and
         ordAt(0) == keyVK and
-        g_activeModCount == 0 and
-        g_modBitmask == 0 and
+        g_active_virtual_modifier_count == 0 and
+        g_active_physical_and_windows_facing_modifiers == 0 and
         keyData.actionType == .undecided and
         !keyData.comboTriggered() and
         !keyData.modifierPressed() and
@@ -10518,10 +11312,8 @@ fn bufferKeyUp(keyVK: i32) void {
                 profSpan(KU_BASE + 214, ku214_start); // ku214 span: head-oldest tap drain loop
             } else if (actionHead == .hold) {
                 if (!contaminatedHead) {
-                    const hcId = activeContextDerived().holdCallback[vki];
-                    if (hcId != -1) {
+                    if (queueHoldCallbackOnce(keyVK, nameRefHead)) {
                         const ku215_start = profStartSect();
-                        queueCallback(hcId, nameRefHead, @ptrCast(&[_:0]u16{0}), 0);
                         profSpan(KU_BASE + 215, ku215_start); // ku215 span: head-oldest hold queueCallback
                     } else {
                         const ku216_start = profStartSect();
@@ -10558,6 +11350,43 @@ fn bufferKeyUp(keyVK: i32) void {
 // Section 20 — DLL exports: lifecycle & configuration
 // ============================================================================
 var g_is_initialized: bool = false;
+var g_precompiledShortcutsApplied: bool = false;
+var g_precompiledShortcutsLoadStarted: bool = false;
+// Compiled callback fields are stable zero-based slots from the generated
+// module, not runtime callback IDs.  AHK binds those slots after QMK.Init()
+// has preloaded the compiled rows.  The published lengths below delimit the
+// compiled prefix so runtime rows are never rewritten by this bridge.
+const COMPILED_CALLBACK_SLOT_MAX: usize = 4096;
+var g_compiledCallbackBindings: [COMPILED_CALLBACK_SLOT_MAX]i32 = [_]i32{-1} ** COMPILED_CALLBACK_SLOT_MAX;
+const COMPILED_ZIG_CALLBACK_ID_BASE: i32 = -0x3000_0000;
+
+fn precompiledCallbackId(slot: i32) i32 {
+    if (slot < 0) return slot;
+    if (comptime has_compiled_user_shortcuts_build and @hasDecl(compiled_user_shortcuts, "Compiled_Callbacks")) {
+        // Large generated callback tables are intentionally compile-time data.
+        // Raise Zig's evaluator budget for this lookup; this does not add a
+        // runtime loop or change the callback ABI.
+        @setEvalBranchQuota(1_000_000);
+        inline for (compiled_user_shortcuts.Compiled_Callbacks.zig) |descriptor| {
+            if (descriptor.slot == @as(u32, @intCast(slot))) return COMPILED_ZIG_CALLBACK_ID_BASE - slot;
+        }
+        inline for (compiled_user_shortcuts.Compiled_Callbacks.ahk) |descriptor| {
+            if (descriptor.slot == @as(u32, @intCast(slot))) return COMPILED_ZIG_CALLBACK_ID_BASE - slot;
+        }
+    }
+    return slot;
+}
+
+inline fn isCompiledZigCallbackId(callback_id: i32) bool {
+    return callback_id <= COMPILED_ZIG_CALLBACK_ID_BASE and
+        callback_id > COMPILED_ZIG_CALLBACK_ID_BASE - @as(i32, @intCast(COMPILED_CALLBACK_SLOT_MAX));
+}
+// Test-only observability. This remains disabled for normal build-options
+// modules and records only the family counts successfully preloaded by the
+// typed compiled-shortcut adapter. The public fixture taxonomy keeps normal
+// and instant combos, external and internal chords, and the two native
+// controls distinct even though some runtime stores are shared.
+var g_precompiledFamilyCounts: [14]u32 = [_]u32{0} ** 14;
 // Set to true the first time QMK_SetUserConfig is called. Prevents the
 // post-warmup defaults in QMK_SetInterceptionCallbacks from overwriting
 // user settings in any call-order scenario.
@@ -10570,7 +11399,7 @@ var g_physModBitTable: [256]u16 = [_]u16{0} ** 256;
 // On any new PhysModDown, g_modPollGeneration is bumped — the running thread
 // sees the change and restarts its down-time/VK capture, so only one thread
 // ever runs at a time.  When all 8 VKs are physically up, the thread clears
-// g_physicalModMask entirely and exits.
+// g_active_physical_modifiers entirely and exits.
 // ============================================================================
 const ALL_MOD_VKS = [8]i32{ 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0x5B, 0x5C };
 // LShift, RShift, LCtrl, RCtrl, LAlt, RAlt, LWin, RWin
@@ -10663,7 +11492,7 @@ fn modPollThreadProc(_: ?*anyopaque) callconv(.winapi) u32 {
                 return 0;
             }
             // GetAsyncKeyState is not authoritative for QMK physical truth here;
-            // real event ingress owns g_physicalKeyDown/g_physicalHotkeyLRModMask.
+            // real event ingress owns g_physicalKeyDown/g_lr_active_physical_modifiers.
             @atomicStore(i32, &g_modPollActive, 0, .release);
             return 0;
         }
@@ -10853,14 +11682,15 @@ fn processNativeCapturedVK(vk: i32, is_down: bool) bool {
     if (isModVK(vk)) {
         const incoming_tracked_vk = physicalModifierTrackingVK(vk);
         const hidden_up = !is_down and physicalModifierHiddenFromOs(incoming_tracked_vk);
-        const tracked_vk = applyPhysicalModifierEvent(vk, is_down);
+        const tracked_vk = apply_physical_modifier_event(vk, is_down);
         if (is_down) cancelRepeatForDifferentKeyDown(tracked_vk);
         if (!is_down) cancelRepeatForRequiredKeyUp(tracked_vk);
         if (is_down) markPhysicalModifierHiddenFromOs(tracked_vk);
         markGenericTapHoldInterrupted(tracked_vk, is_down);
-        const modMask = computeHotkeyModBitmask();
+        const modMask = compute_modifiers_to_send();
         handleNativePanicExitIfMatched(tracked_vk, modMask, is_down);
         handleNativeReloadIfMatched(tracked_vk, modMask, is_down);
+        if (handleNativeSuspendIfMatched(tracked_vk, modMask, is_down)) return true;
         const consumed = if (is_down)
             queueReversePhysicalModHotkeyIfMatched(tracked_vk, modMask) or queueAnyHotkeyIfMatchedWithGenericModFallback(tracked_vk, modMask, true)
         else
@@ -10869,7 +11699,7 @@ fn processNativeCapturedVK(vk: i32, is_down: bool) bool {
         if (is_down) {
             if (consumed) {
                 markPhysicalModifierHiddenFromOs(tracked_vk);
-            } else if (!g_physicalModifierPassthrough) {
+            } else if (!g_physical_modifier_passthrough) {
                 markPhysicalModifierHiddenFromOs(tracked_vk);
             } else {
                 clearPhysicalModifierHiddenFromOs(tracked_vk);
@@ -10877,13 +11707,21 @@ fn processNativeCapturedVK(vk: i32, is_down: bool) bool {
         } else if (hidden_up) {
             clearPhysicalModifierHiddenFromOs(tracked_vk);
         }
-        return consumed or hidden_up or !g_physicalModifierPassthrough;
+        return consumed or hidden_up or !g_physical_modifier_passthrough;
     }
+    prepareStructuralModifierContext(vk, is_down);
     setPhysicalKeyDownState(vk, is_down);
     markGenericTapHoldInterrupted(vk, is_down);
-    const qmk_mod_mask = computeHotkeyModBitmask();
+    const qmk_mod_mask = compute_modifiers_to_send();
+    // Contextual tap/hold and double-tap rows use the same candidate-first
+    // rule as ordinary hotkeys. Do not rely on the context-filtered callback
+    // bank to decide that the VK has no contextual registration.
+    if (shouldPrepareStructuralHotkeyContext(vk, is_down))
+        _ = prepareStructuralHotkeyContext(vk, qmk_mod_mask, is_down);
+    prepareStructuralContextAction(vk);
     handleNativePanicExitIfMatched(vk, qmk_mod_mask, is_down);
     handleNativeReloadIfMatched(vk, qmk_mod_mask, is_down);
+    if (handleNativeSuspendIfMatched(vk, qmk_mod_mask, is_down)) return true;
 
     if (@atomicLoad(i32, &g_runtimeHotkeysSuspended, .acquire) != 0) {
         const consumed = queueAnyHotkeyIfMatchedWithGenericModFallback(vk, qmk_mod_mask, is_down);
@@ -10893,25 +11731,37 @@ fn processNativeCapturedVK(vk: i32, is_down: bool) bool {
 
     const tap_hold_owns_release = !is_down and vk > 0 and vk < VK_COUNT and
         g_tapHoldArmed[@intCast(vk)];
-    if (is_down and genericTapHoldConfigured(vk) and qmk_mod_mask == 0 and
+    const contextual_tap_owns_release = !is_down and vk > 0 and vk < VK_COUNT and
+        g_contextualTapArmed[@intCast(vk)];
+    // Solo contextual tap rows (including SetupTaps 1:1 remaps) are kept out
+    // of the ordinary matcher by shouldDeferRuntimeContextualTapHotkey.  They
+    // therefore must be offered to this arming path independently of whether
+    // the key also has a generic tap/hold registration.  The matcher itself
+    // enforces the solo-only rule, so chords, modifiers, and buffered keys
+    // continue through the normal hotkey/tap-hold paths.
+    if (shouldArmRuntimeContextualTapHotkey(vk, is_down) and qmk_mod_mask == 0 and
         tryArmRuntimeContextualTapHotkey(vk, qmk_mod_mask))
     {
         return true;
     }
-    if (genericTapHoldConfigured(vk) and (qmk_mod_mask == 0 or tap_hold_owns_release)) {
+    if (genericTapHoldConfigured(vk) and !contextual_tap_owns_release and
+        (!is_down or !keySequenceActive()) and
+        (qmk_mod_mask == 0 or tap_hold_owns_release)) {
         return handleGenericTapHold(vk, is_down);
     }
 
     if (isPassthroughVK(vk)) {
         const consumed = queueAnyHotkeyIfMatched(vk, qmk_mod_mask, is_down);
         if (consumed and !is_down) cleanupBufferedKeyAfterConsumedKeyUp(vk);
+        if (!consumed) observePassthroughHotstring(vk, is_down);
         return consumed;
     }
 
-    const modMask = computeHotkeyModBitmask();
+    const modMask = compute_modifiers_to_send();
     if (queueAnyHotkeyIfMatched(vk, modMask, is_down)) {
+        if (is_down) hotstringRecordConsumedKeyDown(vk);
         if (!is_down) cleanupBufferedKeyAfterConsumedKeyUp(vk);
-        if (!is_down and vk > 0 and vk < VK_COUNT) g_nativePassthroughDown[@intCast(vk)] = false;
+        if (!is_down and vk > 0 and vk < VK_COUNT) g_native_passthrough_to_windows[@intCast(vk)] = false;
         return true;
     }
     if (shouldForwardNativeModifiedStroke(vk, is_down)) {
@@ -10948,7 +11798,7 @@ fn lowLevelKeyboardProc(nCode: i32, wParam: usize, lParam: isize) callconv(.wina
     g_llHookLastScan = @intCast(info.scanCode & 0xFFFF);
     g_llHookLastFlags = @intCast(info.flags & 0xFFFF);
     g_llHookLastIsDown = if (is_down) 1 else 0;
-    g_llHookLastMods = computeHotkeyModBitmask();
+    g_llHookLastMods = compute_modifiers_to_send();
     g_llHookLastConsumed = if (consumed) 1 else 0;
     if (consumed) return 1;
     return CallNextHookEx(g_llHookHandle, nCode, wParam, lParam);
@@ -11097,26 +11947,26 @@ fn clearNativeCaptureStateOnly() void {
     kbClear();
     ordClear();
     timerClear();
-    activeModClear();
+    clear_active_virtual_modifiers();
     @memset(&g_activeModPresent, false);
     @memset(&g_activeModIdx, -1);
     clearPhysicalKeyDownState();
     @memset(&g_foreignPhysicalKeyDown, false);
     g_foreignPhysicalQuarantineArmed = false;
     g_trackedPhysicalKeysDown = 0;
-    @memset(&g_nativePassthroughDown, false);
-    @memset(&g_hotkeyConsumedDown, false);
+    @memset(&g_native_passthrough_to_windows, false);
+    @memset(&g_hotkey_consumed_down, false);
     @memset(&g_contextualTapArmed, false);
     @memset(&g_contextualTapCallbackId, -1);
     @memset(&g_contextualTapHoldCallbackId, -1);
     @memset(&g_contextualTapCleanupCallbackId, -1);
     @memset(&g_contextualTapThreshold, 0);
     @memset(&g_contextualTapDownTime, 0);
-    g_physicalModMask = 0;
-    g_physicalModMaskActive = false;
-    g_physicalHotkeyModMask = 0;
-    g_physicalHotkeyLRModMask = 0;
-    @memset(&g_physicalHotkeyModCounts, 0);
+    g_active_physical_modifiers = 0;
+    g_any_physical_modifiers_active = false;
+    g_which_physical_modifiers_to_send = 0;
+    g_lr_active_physical_modifiers = 0;
+    @memset(&g_active_physical_modifier_key_counts_by_category, 0);
     g_unreleasedKeyCount = 0;
     g_unreleasedNonModCount = 0;
     g_unrelModCount = 0;
@@ -11183,7 +12033,7 @@ fn ensureAsyncSendWorker() void {
             return;
         }
     }
-    g_async_event = CreateEventW(null, 0, 0, null);
+    g_async_event = CreateEventW(null, FALSE, FALSE, null);
     if (g_async_event == null) return;
     @atomicStore(i32, &g_async_active, 1, .release);
     g_async_thread = CreateThread(null, 0, asyncSendThreadProc, null, 0, null);
@@ -11288,14 +12138,15 @@ fn subscriptionPollThreadProc(_: ?*anyopaque) callconv(.winapi) u32 {
                     if (isModVK(vk)) {
                         const incoming_tracked_vk = physicalModifierTrackingVK(vk);
                         const hidden_up = !isDown and physicalModifierHiddenFromOs(incoming_tracked_vk);
-                        const tracked_vk = applyPhysicalModifierEvent(vk, isDown);
+                        const tracked_vk = apply_physical_modifier_event(vk, isDown);
                         if (isDown) cancelRepeatForDifferentKeyDown(tracked_vk);
                         if (!isDown) cancelRepeatForRequiredKeyUp(tracked_vk);
                         if (isDown) markPhysicalModifierHiddenFromOs(tracked_vk);
                         markGenericTapHoldInterrupted(tracked_vk, isDown);
-                        const modMask = computeHotkeyModBitmask();
+                        const modMask = compute_modifiers_to_send();
                         handleNativePanicExitIfMatched(tracked_vk, modMask, isDown);
                         handleNativeReloadIfMatched(tracked_vk, modMask, isDown);
+                        if (handleNativeSuspendIfMatched(tracked_vk, modMask, isDown)) continue;
                         const suppress = if (isDown)
                             queueReversePhysicalModHotkeyIfMatched(tracked_vk, modMask) or queueAnyHotkeyIfMatched(tracked_vk, modMask, true)
                         else
@@ -11304,7 +12155,7 @@ fn subscriptionPollThreadProc(_: ?*anyopaque) callconv(.winapi) u32 {
                         if (isDown) {
                             if (suppress) {
                                 markPhysicalModifierHiddenFromOs(tracked_vk);
-                            } else if (!g_physicalModifierPassthrough) {
+                            } else if (!g_physical_modifier_passthrough) {
                                 markPhysicalModifierHiddenFromOs(tracked_vk);
                             } else {
                                 clearPhysicalModifierHiddenFromOs(tracked_vk);
@@ -11312,14 +12163,19 @@ fn subscriptionPollThreadProc(_: ?*anyopaque) callconv(.winapi) u32 {
                         } else if (hidden_up) {
                             clearPhysicalModifierHiddenFromOs(tracked_vk);
                         }
-                        if (!suppress and !hidden_up and g_physicalModifierPassthrough) _ = interception_send(ctx, device, @ptrCast(&stroke), 1);
+                        if (!suppress and !hidden_up and g_physical_modifier_passthrough) _ = interception_send(ctx, device, @ptrCast(&stroke), 1);
                         continue;
                     }
+                    prepareStructuralModifierContext(vk, isDown);
                     setPhysicalKeyDownState(vk, isDown);
                     markGenericTapHoldInterrupted(vk, isDown);
-                    const qmk_mod_mask = computeHotkeyModBitmask();
+                    const qmk_mod_mask = compute_modifiers_to_send();
+                    if (shouldPrepareStructuralHotkeyContext(vk, isDown))
+                        _ = prepareStructuralHotkeyContext(vk, qmk_mod_mask, isDown);
+                    prepareStructuralContextAction(vk);
                     handleNativePanicExitIfMatched(vk, qmk_mod_mask, isDown);
                     handleNativeReloadIfMatched(vk, qmk_mod_mask, isDown);
+                    if (handleNativeSuspendIfMatched(vk, qmk_mod_mask, isDown)) continue;
                     if (@atomicLoad(i32, &g_runtimeHotkeysSuspended, .acquire) != 0) {
                         const suppress = queueAnyHotkeyIfMatched(vk, qmk_mod_mask, isDown);
                         if (suppress and !isDown) cleanupBufferedKeyAfterConsumedKeyUp(vk);
@@ -11329,12 +12185,16 @@ fn subscriptionPollThreadProc(_: ?*anyopaque) callconv(.winapi) u32 {
 
                     const tap_hold_owns_release = !isDown and vk > 0 and vk < VK_COUNT and
                         g_tapHoldArmed[@intCast(vk)];
-                    if (isDown and genericTapHoldConfigured(vk) and qmk_mod_mask == 0 and
+                    const contextual_tap_owns_release = !isDown and vk > 0 and vk < VK_COUNT and
+                        g_contextualTapArmed[@intCast(vk)];
+                    if (shouldArmRuntimeContextualTapHotkey(vk, isDown) and qmk_mod_mask == 0 and
                         tryArmRuntimeContextualTapHotkey(vk, qmk_mod_mask))
                     {
                         continue;
                     }
-                    if (genericTapHoldConfigured(vk) and (qmk_mod_mask == 0 or tap_hold_owns_release)) {
+                    if (genericTapHoldConfigured(vk) and !contextual_tap_owns_release and
+                        (!isDown or !keySequenceActive()) and
+                        (qmk_mod_mask == 0 or tap_hold_owns_release)) {
                         // An unmodified tap/hold key owns the full press lifetime. If another
                         // key/modifier interrupts it, its key-up still resolves here so both
                         // tap and hold callbacks are canceled (cleanup-only, if configured).
@@ -11342,14 +12202,16 @@ fn subscriptionPollThreadProc(_: ?*anyopaque) callconv(.winapi) u32 {
                     } else if (isPassthroughVK(vk)) {
                         const suppress = queueAnyHotkeyIfMatched(vk, qmk_mod_mask, isDown);
                         if (suppress and !isDown) cleanupBufferedKeyAfterConsumedKeyUp(vk);
+                        if (!suppress) observePassthroughHotstring(vk, isDown);
                         if (!suppress) _ = interception_send(ctx, device, @ptrCast(&stroke), 1);
                     } else {
-                        const modMask = computeHotkeyModBitmask();
+                        const modMask = compute_modifiers_to_send();
                         const suppress = queueAnyHotkeyIfMatched(vk, modMask, isDown);
                         const vki: usize = @intCast(vk);
                         if (suppress) {
+                            if (isDown) hotstringRecordConsumedKeyDown(vk);
                             if (!isDown) cleanupBufferedKeyAfterConsumedKeyUp(vk);
-                            if (!isDown) g_nativePassthroughDown[vki] = false;
+                            if (!isDown) g_native_passthrough_to_windows[vki] = false;
                         } else if (shouldForwardNativeModifiedStroke(vk, isDown)) {
                             recordNativeModifiedStrokeForwarded(vk, isDown);
                             if (isDown) {
@@ -11373,6 +12235,68 @@ fn subscriptionPollThreadProc(_: ?*anyopaque) callconv(.winapi) u32 {
 
     @atomicStore(i32, &g_pollThreadActive, 0, .release);
     return 0;
+}
+
+// Bind one generated callback slot to the runtime callback ID assigned by
+// AutoHotkey.  Compiled rows and runtime rows share these stores.  Bind only
+// the published prefix: the unpublished tail is setup scratch space and must
+// not be mistaken for a compiled row during callback registration.
+export fn QMK_BindCompiledCallback(slot_in: i32, runtime_id: i32) callconv(.c) i32 {
+    if (slot_in < 0 or runtime_id < 0) return 0;
+    const slot: usize = @intCast(slot_in);
+    const compiled_id = COMPILED_ZIG_CALLBACK_ID_BASE - slot_in;
+    if (slot >= COMPILED_CALLBACK_SLOT_MAX) return 0;
+    acquireSetupPublishLock();
+    defer releaseSetupPublishLock();
+    g_compiledCallbackBindings[slot] = runtime_id;
+    var changed: usize = 0;
+    var runtime_exempt = false;
+    var i: usize = 0;
+    // Binding is an initialization-time operation.  Only the published
+    // compiled prefix is eligible for slot replacement; scanning the live
+    // tail can accidentally rewrite a later runtime callback whose positive
+    // ID happens to equal a compiled slot number.
+    while (i < g_runtimeHotkeysPublishedLen) : (i += 1) {
+        if (g_runtimeHotkeys[i].callbackId == slot_in or g_runtimeHotkeys[i].callbackId == compiled_id) { g_runtimeHotkeys[i].callbackId = runtime_id; changed += 1; runtime_exempt = runtime_exempt or g_runtimeHotkeys[i].suspendExempt; }
+        if (g_runtimeHotkeys[i].holdCallbackId == slot_in or g_runtimeHotkeys[i].holdCallbackId == compiled_id) { g_runtimeHotkeys[i].holdCallbackId = runtime_id; changed += 1; runtime_exempt = runtime_exempt or g_runtimeHotkeys[i].suspendExempt; }
+        if (g_runtimeHotkeys[i].cleanupCallbackId == slot_in or g_runtimeHotkeys[i].cleanupCallbackId == compiled_id) { g_runtimeHotkeys[i].cleanupCallbackId = runtime_id; changed += 1; runtime_exempt = runtime_exempt or g_runtimeHotkeys[i].suspendExempt; }
+    }
+    i = 0;
+    while (i < g_runtimeContextActionsPublishedLen) : (i += 1) {
+        if (g_runtimeContextActions[i].callbackId == slot_in or g_runtimeContextActions[i].callbackId == compiled_id) { g_runtimeContextActions[i].callbackId = runtime_id; changed += 1; runtime_exempt = runtime_exempt or g_runtimeContextActions[i].suspendExempt; }
+        if (g_runtimeContextActions[i].tapCallbackId == slot_in or g_runtimeContextActions[i].tapCallbackId == compiled_id) { g_runtimeContextActions[i].tapCallbackId = runtime_id; changed += 1; runtime_exempt = runtime_exempt or g_runtimeContextActions[i].suspendExempt; }
+        if (g_runtimeContextActions[i].holdCallbackId == slot_in or g_runtimeContextActions[i].holdCallbackId == compiled_id) { g_runtimeContextActions[i].holdCallbackId = runtime_id; changed += 1; runtime_exempt = runtime_exempt or g_runtimeContextActions[i].suspendExempt; }
+    }
+    i = 0;
+    while (i < g_runtimeCombosPublishedLen) : (i += 1) {
+        if (g_runtimeCombos[i].callbackId == slot_in or g_runtimeCombos[i].callbackId == compiled_id) { g_runtimeCombos[i].callbackId = runtime_id; changed += 1; runtime_exempt = runtime_exempt or g_runtimeCombos[i].suspendExempt; }
+    }
+    i = 0;
+    while (i < g_runtimeInstantCombosPublishedLen) : (i += 1) {
+        if (g_runtimeInstantCombos[i].callbackId == slot_in or g_runtimeInstantCombos[i].callbackId == compiled_id) { g_runtimeInstantCombos[i].callbackId = runtime_id; changed += 1; runtime_exempt = runtime_exempt or g_runtimeInstantCombos[i].suspendExempt; }
+    }
+    i = 0;
+    while (i < g_runtimeChordsPublishedLen) : (i += 1) {
+        if (g_runtimeChords[i].callbackId == slot_in or g_runtimeChords[i].callbackId == compiled_id) { g_runtimeChords[i].callbackId = runtime_id; changed += 1; runtime_exempt = runtime_exempt or g_runtimeChords[i].suspendExempt; }
+    }
+    i = 0;
+    while (i < g_runtimeHotstringPublishedLen) : (i += 1) {
+        if (g_runtimeHotstringCallbackIds[i] == slot_in or g_runtimeHotstringCallbackIds[i] == compiled_id) { g_runtimeHotstringCallbackIds[i] = runtime_id; changed += 1; runtime_exempt = runtime_exempt or g_runtimeHotstringSuspendExempt[i]; }
+    }
+    if (changed != 0) {
+        // The callback ID is now the live AHK callback ID, not the generated
+        // compiled slot.  Mark it immediately so a suspend transition cannot
+        // race the deferred runtime-store publish and suppress an exempt
+        // callback such as Ctrl+Alt+S on the next press.
+        _ = markRuntimeCallbackSuspendExempt(runtime_id, runtime_exempt);
+        g_bulkRuntimeHotkeysDirty = true;
+        g_bulkRuntimeContextActionsDirty = true;
+        g_bulkRuntimeCombosDirty = true;
+        g_bulkRuntimeChordsDirty = true;
+        g_bulkRuntimeHotstringsDirty = true;
+        requestRuntimePublish(RUNTIME_PUBLISH_SETUP);
+    }
+    return @intCast(changed);
 }
 
 export fn QMK_SetInterceptionCallbacks(
@@ -11460,12 +12384,16 @@ export fn QMK_SetInterceptionCallbacks(
         if (g_runtimeModifiers.len != 0) @memset(g_runtimeModifiers, RuntimeModifier{});
         if (g_runtimeModifierTexts.len != 0) @memset(g_runtimeModifierTexts, [_]u16{0} ** RUNTIME_CONTEXT_ACTION_CHARS);
         g_runtimeModifiersLen = 0;
+        if (g_runtimePassthroughs.len != 0) @memset(g_runtimePassthroughs, RuntimePassthrough{});
+        if (g_runtimePassthroughTexts.len != 0) @memset(g_runtimePassthroughTexts, [_]u16{0} ** RUNTIME_CONTEXT_ACTION_CHARS);
+        g_runtimePassthroughsLen = 0;
+        g_bulkRuntimePassthroughsDirty = false;
         @memset(&g_runtimeModifierTouched, false);
         @memset(&g_runtimeModifierBaseType, MOD_NONE);
         ptmClear();
         kdtClear();
         kutClear();
-        activeModClear();
+        clear_active_virtual_modifiers();
         @memset(&g_activeModPresent, false);
         @memset(&g_activeModIdx, -1);
         @memset(&g_vkToRegIdx, -1);
@@ -11476,25 +12404,25 @@ export fn QMK_SetInterceptionCallbacks(
         @memset(&g_nkvkVK, 0);
 
         g_keyCount = 0;
-        g_modBitmask = 0;
-        g_physicalModMask = 0;
-        g_physicalModMaskActive = false;
+        g_active_physical_and_windows_facing_modifiers = 0;
+        g_active_physical_modifiers = 0;
+        g_any_physical_modifiers_active = false;
         clearPhysicalKeyDownState();
         @memset(&g_foreignPhysicalKeyDown, false);
         g_foreignPhysicalQuarantineArmed = false;
         g_trackedPhysicalKeysDown = 0;
         g_lastPhysicalDownVK = 0;
-        g_physicalHotkeyModMask = 0;
-        g_physicalHotkeyLRModMask = 0;
-        @memset(&g_physicalHotkeyModCounts, 0);
-        @memset(&g_hotkeyConsumedDown, false);
+        g_which_physical_modifiers_to_send = 0;
+        g_lr_active_physical_modifiers = 0;
+        @memset(&g_active_physical_modifier_key_counts_by_category, 0);
+        @memset(&g_hotkey_consumed_down, false);
         @memset(&g_contextualTapArmed, false);
         @memset(&g_contextualTapCallbackId, -1);
         @memset(&g_contextualTapHoldCallbackId, -1);
         @memset(&g_contextualTapCleanupCallbackId, -1);
         @memset(&g_contextualTapThreshold, 0);
         @memset(&g_contextualTapDownTime, 0);
-        @memset(&g_nativePassthroughDown, false);
+        @memset(&g_native_passthrough_to_windows, false);
         g_lastKeyTime = 0;
         g_typingMode = false;
         g_typingModeUntil = 0;
@@ -11539,7 +12467,15 @@ export fn QMK_SetInterceptionCallbacks(
 
         registerDefaultKeys();
         applyPrecompiledShortcuts();
-        if (!g_hotkeyContextsParsed) initParsedHotkeyContexts();
+        // The compiled preload uses the same unpublished -> published runtime
+        // transaction as QMK_Setup*.  Force that transaction to finish before
+        // taking the initialization key-gate snapshot.  This is normally a
+        // no-op because requestRuntimePublish() flushes synchronously, but it
+        // prevents a deferred worker publish from leaving compiled families
+        // absent from the active banks during first initialization.
+        acquireSetupPublishLock();
+        flushRuntimePublishIfIdleLocked();
+        releaseSetupPublishLock();
 
         // Pre-populate the runtime scan-code cache for any registered key not
         // covered by the comptime QWERTY_SC table. For all DEFAULT_KEYS this
@@ -11571,13 +12507,11 @@ export fn QMK_SetInterceptionCallbacks(
         g_physModBitTable[0xA1] = 0x04; // RShift
         g_physModBitTable[0x5B] = 0x08; // LWin
         g_physModBitTable[0x5C] = 0x08; // RWin
-        rebuildKeyGate();
+        rebuild_runtime_vk_plan();
         g_keyGateDirty = false;
         syncColdPhysicalStateFromSystem();
         warmHotTables();
         warmStrokeVKCache();
-        _ = QMK_StartNativeForegroundContextHook();
-        _ = QMK_RefreshContextMenuState();
         g_is_initialized = true;
     }
     if (!have_interception_callbacks) {
@@ -11838,7 +12772,7 @@ export fn QMK_SetUserConfig(
 
 export fn QMK_SetPhysicalModifierPassthrough(enabled: i32) callconv(.c) i32 {
     const should_passthrough = enabled != 0;
-    if (g_physicalModifierPassthrough == should_passthrough) return 1;
+    if (g_physical_modifier_passthrough == should_passthrough) return 1;
 
     const held = snapshotPhysicalMods();
     if (!should_passthrough) {
@@ -11859,7 +12793,7 @@ export fn QMK_SetPhysicalModifierPassthrough(enabled: i32) callconv(.c) i32 {
         }
     }
 
-    g_physicalModifierPassthrough = should_passthrough;
+    g_physical_modifier_passthrough = should_passthrough;
     return 1;
 }
 
@@ -11902,29 +12836,29 @@ export fn QMK_EmergencyReset() callconv(.c) void {
     pendingRollClear();
     kbClear();
     ordClear();
-    activeModClear();
+    clear_active_virtual_modifiers();
     timerClear();
     kdtClear();
     kutClear();
-    g_modBitmask = 0;
-    g_physicalModMask = 0;
-    g_physicalModMaskActive = false;
+    g_active_physical_and_windows_facing_modifiers = 0;
+    g_active_physical_modifiers = 0;
+    g_any_physical_modifiers_active = false;
     clearPhysicalKeyDownState();
     @memset(&g_foreignPhysicalKeyDown, false);
     g_foreignPhysicalQuarantineArmed = false;
     g_trackedPhysicalKeysDown = 0;
     g_lastPhysicalDownVK = 0;
-    g_physicalHotkeyModMask = 0;
-    g_physicalHotkeyLRModMask = 0;
-    @memset(&g_physicalHotkeyModCounts, 0);
-    @memset(&g_hotkeyConsumedDown, false);
+    g_which_physical_modifiers_to_send = 0;
+    g_lr_active_physical_modifiers = 0;
+    @memset(&g_active_physical_modifier_key_counts_by_category, 0);
+    @memset(&g_hotkey_consumed_down, false);
     @memset(&g_contextualTapArmed, false);
     @memset(&g_contextualTapCallbackId, -1);
     @memset(&g_contextualTapHoldCallbackId, -1);
     @memset(&g_contextualTapCleanupCallbackId, -1);
     @memset(&g_contextualTapThreshold, 0);
     @memset(&g_contextualTapDownTime, 0);
-    @memset(&g_nativePassthroughDown, false);
+    @memset(&g_native_passthrough_to_windows, false);
     @memset(&g_tapHoldDownTime, 0);
     @memset(&g_tapHoldArmed, false);
     @memset(&g_tapHoldInterrupted, false);
@@ -12005,8 +12939,8 @@ export fn QMK_NativeReload() callconv(.c) noreturn {
     @memset(std.mem.asBytes(&process_info), 0);
 
     QMK_EmergencyReset();
-    const created = CreateProcessW(null, @ptrCast(&command_line), null, null, 0, 0, null, null, &startup_info, &process_info);
-    if (created != 0) {
+    const created = CreateProcessW(null, @ptrCast(&command_line), null, null, FALSE, 0, null, null, &startup_info, &process_info);
+    if (created != FALSE) {
         _ = CloseHandle(process_info.hThread);
         _ = CloseHandle(process_info.hProcess);
         ExitProcess(0);
@@ -12132,7 +13066,7 @@ export fn QMK_ReleaseStuckModifiers() callconv(.c) void {
     for (0..g_kbLen) |i| {
         const ekd = &g_kbData[i];
         if (!ekd.modifierActivated()) continue;
-        const modVK: u16 = g_keyModVK[@intCast(g_kbVK[i])];
+        const modVK: u16 = g_virtual_modifier_output_vk[@intCast(g_kbVK[i])];
         if (modVK != 0) {
             ringReset();
             ringAddKey(modVK, KEYEVENTF_KEYUP);
@@ -12141,13 +13075,13 @@ export fn QMK_ReleaseStuckModifiers() callconv(.c) void {
         ekd.cf(FLAG_MOD_ACT | FLAG_MOD_TRIG);
     }
     // Second pass: send key-up for every modifier type that has an entry in
-    // g_activeMods but is no longer physically in the key buffer.
+    // g_active_virtual_modifiers_by_vk but is no longer physically in the key buffer.
     const modVKs = [_]u16{ VK_CONTROL, VK_MENU, VK_SHIFT, VK_LWIN };
     const modTypes = [_]i8{ MOD_CTRL, MOD_ALT, MOD_SHIFT, MOD_WIN };
     for (modVKs, modTypes) |mvk, mt| {
         var found = false;
-        for (0..@intCast(g_activeModCount)) |j| {
-            if (activeContextDerived().keyModType[@intCast(g_activeMods[j])] == mt) {
+        for (0..@intCast(g_active_virtual_modifier_count)) |j| {
+            if (activeContextDerived().keyModType[@intCast(g_active_virtual_modifiers_by_vk[j])] == mt) {
                 found = true;
                 break;
             }
@@ -12158,20 +13092,20 @@ export fn QMK_ReleaseStuckModifiers() callconv(.c) void {
             ringSend();
         }
     }
-    activeModClear();
+    clear_active_virtual_modifiers();
     g_unrelModCount = 0;
     g_cleanUnrelModCount = 0;
     rfClear(RF_UNREL_MODS | RF_CLEAN_UNREL_MODS); // FSM-lite
 }
 export fn QMK_ForceResetModifiers() callconv(.c) void {
     QMK_ReleaseStuckModifiers();
-    activeModClear();
-    g_modBitmask = 0;
-    g_physicalModMask = 0;
-    g_physicalModMaskActive = false;
+    clear_active_virtual_modifiers();
+    g_active_physical_and_windows_facing_modifiers = 0;
+    g_active_physical_modifiers = 0;
+    g_any_physical_modifiers_active = false;
     var toDelete: [VK_COUNT]i32 = undefined;
     var tdCount: usize = 0;
-    for (0..g_kbLen) |i| if (g_kbData[i].isModifier()) {
+    for (0..g_kbLen) |i| if (g_kbData[i].isRuntimeModifier()) {
         toDelete[tdCount] = g_kbVK[i];
         tdCount += 1;
     };
@@ -12207,7 +13141,7 @@ fn refreshReplayKeyGate() void {
     // Most setup callers already rebuilt through markKeyGateDirty(). Do not
     // rebuild a second time; only cover the rare deferred-dirty caller here.
     if (g_keyGateDirty) {
-        rebuildKeyGate();
+        rebuild_runtime_vk_plan();
         g_keyGateDirty = false;
     }
     warmHotTables();
@@ -12461,7 +13395,11 @@ fn appendRuntimeModifier(vk: i32, mod_type: i8, context_kind: u8, context_negate
     if (!ensureRuntimeModifierCapacity(g_runtimeModifiersLen + 1)) return false;
     if (vk <= 0 or vk >= VK_COUNT) return false;
     if (mod_type < MOD_NONE or mod_type > MOD_WIN) return false;
-    if (runtimeModifierDuplicate(vk, mod_type, context_kind, context_negated, context_text, suspend_exempt)) return false;
+    // Compiled modifiers are published into the same runtime store before
+    // normal AHK setup runs.  Re-submitting an identical runtime row must be
+    // an idempotent success, not a failed insertion that makes SetupModifiers
+    // report the entire family as broken.
+    if (runtimeModifierDuplicate(vk, mod_type, context_kind, context_negated, context_text, suspend_exempt)) return true;
 
     const vk_idx: usize = @intCast(vk);
     if (!g_runtimeModifierTouched[vk_idx]) {
@@ -12487,6 +13425,61 @@ fn appendRuntimeModifier(vk: i32, mod_type: i8, context_kind: u8, context_negate
     g_runtimeModifiersLen += 1;
     return true;
 }
+/// Context-aware passthrough keys. Record layout (20 bytes): vk:i32,
+/// contextKind:u8, negated:u8, suspendExempt:u8, reserved:u8,
+/// textOffset:u32 at +12, textLen:u16 at +16.
+export fn QMK_SetupPassthroughs(records: [*]const u8, count: u32, contextChars: [*]const u16, contextCharsLen: u32) callconv(.c) i32 {
+    acquireSetupPublishLock();
+    defer releaseSetupPublishLock();
+    prepareRuntimePassthroughFamily();
+    if (!ensureRuntimePassthroughCapacity(g_runtimePassthroughsLen + @as(usize, @intCast(count)))) return 0;
+    var loaded: i32 = 0;
+    var i: usize = 0;
+    while (i < count) : (i += 1) {
+        const off = i * 20;
+        const vk = readI32LE(records, off);
+        const text_offset: usize = @intCast(readU32LE(records, off + 12));
+        var text_len: usize = @intCast(readU16LE(records, off + 16));
+        if (text_offset > contextCharsLen) continue;
+        const remaining: usize = @intCast(contextCharsLen - @as(u32, @intCast(text_offset)));
+        if (text_len > remaining) text_len = remaining;
+        if (appendRuntimePassthrough(vk, records[off + 4], records[off + 5] != 0, contextChars[text_offset..][0..text_len], records[off + 6] != 0)) loaded += 1;
+    }
+    finishRuntimePassthroughSetup();
+    return loaded;
+}
+
+export fn QMK_SetupPassthroughEntries(records: [*]const u8, count: u32, textChars: [*]const u16, textCharsLen: u32) callconv(.c) i32 {
+    acquireSetupPublishLock();
+    defer releaseSetupPublishLock();
+    prepareRuntimePassthroughFamily();
+    if (!ensureRuntimePassthroughCapacity(g_runtimePassthroughsLen + @as(usize, @intCast(count)))) return 0;
+    var loaded: i32 = 0;
+    var i: usize = 0;
+    while (i < count) : (i += 1) {
+        const off = i * 24;
+        const key_offset: usize = @intCast(readU32LE(records, off));
+        var key_len: usize = @intCast(readU16LE(records, off + 4));
+        const context_offset: usize = @intCast(readU32LE(records, off + 8));
+        var context_len: usize = @intCast(readU16LE(records, off + 12));
+        if (key_offset > textCharsLen or context_offset > textCharsLen) continue;
+        const key_remaining: usize = @intCast(textCharsLen - @as(u32, @intCast(key_offset)));
+        const context_remaining: usize = @intCast(textCharsLen - @as(u32, @intCast(context_offset)));
+        if (key_len > key_remaining) key_len = key_remaining;
+        if (context_len > context_remaining) context_len = context_remaining;
+        const vk = getVKFromText16(textChars[key_offset..][0..key_len]);
+        var row_loaded = false;
+        var contexts = RuntimeContextListIterator{ .raw = textChars[context_offset..][0..context_len] };
+        while (contexts.next()) |context_part| {
+            const context = parseRuntimeContextSpec(context_part);
+            if (appendRuntimePassthrough(vk, context.kind, context.negated, context.text, records[off + 14] != 0)) row_loaded = true;
+        }
+        if (row_loaded) loaded += 1;
+    }
+    finishRuntimePassthroughSetup();
+    return loaded;
+}
+
 /// Context-aware homerow modifiers. AHK only serializes rows; Zig owns
 /// specificity ordering, active-context selection, suspend filtering, and
 /// key-gate rebuilds. Record layout (20 bytes): vk:i32, modType:i32,
@@ -12713,7 +13706,7 @@ fn ensureRuntimeContextActionCapacity(required: usize) bool {
 
 fn appendRuntimeContextAction(vk: i32, callback_id: i32, action_kind: u8, context_kind: u8, context_negated: bool, context_text: []const u16, suspend_exempt: bool) bool {
     if (!ensureRuntimeContextActionCapacity(g_runtimeContextActionsLen + 1)) return false;
-    if (vk <= 0 or vk >= VK_COUNT or callback_id < 0 or action_kind > 3) return false;
+    if (vk <= 0 or vk >= VK_COUNT or (callback_id < 0 and !isCompiledZigCallbackId(callback_id)) or action_kind > 3) return false;
     if (runtimeContextActionDuplicate(vk, callback_id, action_kind, context_kind, context_negated, context_text, suspend_exempt)) return false;
     if (!ensureRuntimeCallbackSuspendExemptFor(callback_id, suspend_exempt)) return false;
 
@@ -12732,6 +13725,8 @@ fn appendRuntimeContextAction(vk: i32, callback_id: i32, action_kind: u8, contex
         .specificityMask = runtimeHotkeySpecificityMask(context_kind, g_runtimeContextActionTexts[slot][0..text_len]),
         .suspendExempt = suspend_exempt,
     };
+    if (g_runtimeContextActions[slot].specificityMask != 0)
+        g_runtimeContextActionGate[@intCast(vk)] = true;
     _ = markRuntimeCallbackSuspendExempt(callback_id, suspend_exempt);
     switch (action_kind) {
         0 => g_runtimeHoldTouched[@intCast(vk)] = true,
@@ -12750,7 +13745,8 @@ fn appendRuntimeTapHoldRegistration(
 ) bool {
     if (!ensureRuntimeContextActionCapacity(g_runtimeContextActionsLen + 1)) return false;
     if (vk <= 0 or vk >= VK_COUNT) return false;
-    if (tap_callback_id < 0 and hold_callback_id < 0) return false;
+    if (tap_callback_id < 0 and hold_callback_id < 0 and
+        !isCompiledZigCallbackId(tap_callback_id) and !isCompiledZigCallbackId(hold_callback_id)) return false;
     if (runtimeTapHoldRegistrationDuplicate(
         vk, tap_callback_id, hold_callback_id, cleanup_callback_id, threshold_ms,
         context_kind, context_negated, context_text, suspend_exempt)) return false;
@@ -12774,11 +13770,15 @@ fn appendRuntimeTapHoldRegistration(
         .specificityMask = runtimeHotkeySpecificityMask(context_kind, g_runtimeContextActionTexts[slot][0..text_len]),
         .suspendExempt = suspend_exempt,
     };
+    if (g_runtimeContextActions[slot].specificityMask != 0)
+        g_runtimeContextActionGate[@intCast(vk)] = true;
     _ = markRuntimeCallbackSuspendExempt(tap_callback_id, suspend_exempt);
     _ = markRuntimeCallbackSuspendExempt(hold_callback_id, suspend_exempt);
     _ = markRuntimeCallbackSuspendExempt(cleanup_callback_id, suspend_exempt);
-    if (tap_callback_id >= 0) g_runtimeTapHoldTapTouched[@intCast(vk)] = true;
-    if (hold_callback_id >= 0) g_runtimeTapHoldHoldTouched[@intCast(vk)] = true;
+    if (tap_callback_id >= 0 or isCompiledZigCallbackId(tap_callback_id))
+        g_runtimeTapHoldTapTouched[@intCast(vk)] = true;
+    if (hold_callback_id >= 0 or isCompiledZigCallbackId(hold_callback_id))
+        g_runtimeTapHoldHoldTouched[@intCast(vk)] = true;
     g_runtimeContextActionDependencyMask |= g_runtimeContextActions[slot].specificityMask;
     g_runtimeContextActionsLen += 1;
     return true;
@@ -13018,7 +14018,7 @@ fn appendRuntimeCombo(row_in: RuntimeCombo, context_text: []const u16) bool {
     var row = row_in;
     if (row.primaryVK <= 0 or row.primaryVK >= VK_COUNT or row.secondaryVK <= 0 or row.secondaryVK >= VK_COUNT) return false;
     if (row.mode > 3) return false;
-    if ((row.mode == 0 or row.mode == 1) and row.callbackId < 0) return false;
+    if ((row.mode == 0 or row.mode == 1) and row.callbackId < 0 and !isCompiledZigCallbackId(row.callbackId)) return false;
     if ((row.mode == 2 or row.mode == 3) and row.targetVK == 0) return false;
     if (runtimeComboDuplicate(row, context_text)) return false;
     if (!ensureRuntimeCallbackSuspendExemptFor(row.callbackId, row.suspendExempt)) return false;
@@ -13602,6 +14602,8 @@ fn appendRuntimeHotkey(
     _ = markRuntimeCallbackSuspendExempt(hold_callback_id, suspend_exempt);
     _ = markRuntimeCallbackSuspendExempt(cleanup_callback_id, suspend_exempt);
     g_runtimeHotkeyGate[@intCast(vk)] = true;
+    if (g_runtimeHotkeys[slot].specificityMask != 0)
+        g_runtimeContextHotkeyGate[@intCast(vk)] = true;
     g_runtimeHotkeyDependencyMask |= g_runtimeHotkeys[slot].specificityMask;
     g_runtimeHotkeysLen += 1;
     return true;
@@ -13733,9 +14735,12 @@ fn parseRuntimeHotkeySpecText16(raw_spec: []const u16) ?ParsedRuntimeHotkeySpec 
             while (end < last_amp and spec[end] != '&') : (end += 1) {}
             const physical_vk = parsePhysicalPrefixKeyText16(spec[start..end]);
             if (physical_vk <= 0 or physical_vk >= VK_COUNT) return null;
-            const lr_bit = physicalModifierLRBitForVK(physical_vk);
-            if (lr_bit == 0) return null;
             if (first_physical_vk == 0) first_physical_vk = @intCast(physical_vk);
+            const lr_bit = physicalModifierLRBitForVK(physical_vk);
+            // AHK custom hotkeys allow any valid keyboard key as the prefix.
+            // Modifier prefixes additionally contribute their left/right and
+            // collapsed modifier masks; ordinary key prefixes are represented
+            // by physicalModVK and checked through physical key state.
             physical_required |= lr_bit;
             neutral_required |= getCollapsedPhysicalModBit(physical_vk);
             start = end + 1;
@@ -14108,6 +15113,15 @@ fn truncateRuntimeModifiersToPublished() void {
     }
 }
 
+fn truncateRuntimePassthroughsToPublished() void {
+    if (g_runtimePassthroughsLen > g_runtimePassthroughsPublishedLen) {
+        g_runtimePassthroughsLen = g_runtimePassthroughsPublishedLen;
+        g_bulkRuntimePassthroughsDirty = false;
+        g_bulkRuntimeKeyGateDirty = true;
+        rebuildRuntimeDependencyMasksFromPublished();
+    }
+}
+
 fn truncateRuntimeContextActionsToPublished() void {
     if (g_runtimeContextActionsLen > g_runtimeContextActionsPublishedLen) {
         g_runtimeContextActionsLen = g_runtimeContextActionsPublishedLen;
@@ -14189,43 +15203,80 @@ fn truncateRuntimeHotstringsToPublished() void {
 
 fn shouldPrepareRuntimeFamily(prepared_serial: *u32) bool {
     if (g_bulkSetupDepth == 0) g_bulkSetupSerial +%= 1;
-    if (prepared_serial.* == g_bulkSetupSerial) return false;
+    return prepared_serial.* != g_bulkSetupSerial;
+}
+
+inline fn markRuntimeFamilyPrepared(prepared_serial: *u32) void {
     prepared_serial.* = g_bulkSetupSerial;
-    return true;
+}
+
+inline fn compiledRuntimePreloadStillPublishing() bool {
+    if (comptime !has_compiled_user_shortcuts_build) return false;
+    // Runtime setup callers already hold the setup lock. Drain an idle
+    // compiled publish here so published lengths are authoritative before
+    // truncating a family or accepting new runtime rows.
+    flushRuntimePublishIfIdleLocked();
+    return !g_precompiledShortcutsApplied and
+        @atomicLoad(u32, &g_runtimePublishPendingMask, .acquire) != 0;
 }
 
 fn prepareRuntimeHotkeyFamily() void {
+    if (compiledRuntimePreloadStillPublishing()) return;
     if (!shouldPrepareRuntimeFamily(&g_hotkeysPreparedSerial)) return;
+    markRuntimeFamilyPrepared(&g_hotkeysPreparedSerial);
     truncateRuntimeHotkeysToPublished();
 }
 
 fn prepareRuntimeModifierFamily() void {
+    if (compiledRuntimePreloadStillPublishing()) return;
     if (!shouldPrepareRuntimeFamily(&g_modifiersPreparedSerial)) return;
+    markRuntimeFamilyPrepared(&g_modifiersPreparedSerial);
     truncateRuntimeModifiersToPublished();
 }
 
+fn prepareRuntimePassthroughFamily() void {
+    if (compiledRuntimePreloadStillPublishing()) return;
+    if (!shouldPrepareRuntimeFamily(&g_passthroughsPreparedSerial)) return;
+    markRuntimeFamilyPrepared(&g_passthroughsPreparedSerial);
+    truncateRuntimePassthroughsToPublished();
+}
+
 fn prepareRuntimeContextActionFamily() void {
+    if (compiledRuntimePreloadStillPublishing()) return;
     if (!shouldPrepareRuntimeFamily(&g_contextActionsPreparedSerial)) return;
+    markRuntimeFamilyPrepared(&g_contextActionsPreparedSerial);
     truncateRuntimeContextActionsToPublished();
 }
 
 fn prepareRuntimeComboFamily() void {
+    if (compiledRuntimePreloadStillPublishing()) return;
     if (!shouldPrepareRuntimeFamily(&g_combosPreparedSerial)) return;
+    markRuntimeFamilyPrepared(&g_combosPreparedSerial);
     truncateRuntimeCombosToPublished();
 }
 
 fn prepareRuntimeChordFamily() void {
+    if (compiledRuntimePreloadStillPublishing()) return;
     if (!shouldPrepareRuntimeFamily(&g_chordsPreparedSerial)) return;
+    markRuntimeFamilyPrepared(&g_chordsPreparedSerial);
     truncateRuntimeChordsToPublished();
 }
 
 fn prepareRuntimeHotstringFamily() void {
+    if (compiledRuntimePreloadStillPublishing()) return;
     if (!shouldPrepareRuntimeFamily(&g_hotstringsPreparedSerial)) return;
+    markRuntimeFamilyPrepared(&g_hotstringsPreparedSerial);
     truncateRuntimeHotstringsToPublished();
 }
 
 fn finishRuntimeModifierSetup() void {
     g_bulkRuntimeModifiersDirty = true;
+    g_bulkRuntimeKeyGateDirty = true;
+    if (g_bulkSetupDepth == 0) requestRuntimePublish(RUNTIME_PUBLISH_SETUP);
+}
+
+fn finishRuntimePassthroughSetup() void {
+    g_bulkRuntimePassthroughsDirty = true;
     g_bulkRuntimeKeyGateDirty = true;
     if (g_bulkSetupDepth == 0) requestRuntimePublish(RUNTIME_PUBLISH_SETUP);
 }
@@ -14258,7 +15309,7 @@ fn finishRuntimeHotstringSetup() void {
 fn clearIdleTransientStateForPublish() void {
     if (reconcileTrackedPhysicalKeysDown() != 0) return;
     if (@atomicLoad(i32, &g_hotPathActiveCount, .acquire) != 0) return;
-    if (g_activeModCount != 0 or g_unrelModCount != 0 or g_cleanUnrelModCount != 0) {
+    if (g_active_virtual_modifier_count != 0 or g_unrelModCount != 0 or g_cleanUnrelModCount != 0) {
         QMK_ReleaseStuckModifiers();
     }
 
@@ -14283,6 +15334,12 @@ fn rebuildRuntimeDependencyMasksFromPublished() void {
     i = 0;
     while (i < g_runtimeModifiersPublishedLen) : (i += 1) {
         g_runtimeModifierDependencyMask |= g_runtimeModifiers[i].specificityMask;
+    }
+
+    g_runtimePassthroughDependencyMask = 0;
+    i = 0;
+    while (i < g_runtimePassthroughsPublishedLen) : (i += 1) {
+        g_runtimePassthroughDependencyMask |= g_runtimePassthroughs[i].specificityMask;
     }
 
     g_runtimeComboDependencyMask = 0;
@@ -14375,6 +15432,16 @@ fn publishDeferredRuntimeSetup() bool {
             g_hsCtxRowsPublishedLen = g_hsCtxRowsLen;
             g_nativeHotstringPayloadsPublishedLen = g_nativeHotstringPayloads.len;
             g_bulkRuntimeHotstringsDirty = false;
+            published_changed = true;
+        }
+    }
+    if (g_bulkRuntimePassthroughsDirty) {
+        const passthroughs_ok = rebuildActiveRuntimePassthroughs();
+        ok = passthroughs_ok and ok;
+        if (passthroughs_ok) {
+            g_runtimePassthroughsPublishedLen = g_runtimePassthroughsLen;
+            g_bulkRuntimePassthroughsDirty = false;
+            keygate_committed = true;
             published_changed = true;
         }
     }
@@ -14747,6 +15814,282 @@ export fn QMK_GetRuntimeHotstringCount() callconv(.c) i32 {
     return @intCast(g_runtimeHotstringLen);
 }
 
+/// Test-only family visibility. The export is present in the DLL ABI for a
+/// stable probe, but returns -1 unless the build-options module explicitly
+/// enables compiled_shortcuts_test_observability.
+/// Family IDs: 0 modifiers, 1 passthroughs, 2 hotkeys, 3 holds, 4 double taps,
+/// 5 taps, 6 tap-holds, 7 normal combos, 8 instant combos, 9 external chords,
+/// 10 internal chords, 11 hotstrings, 12 panic control, 13 reload control.
+export fn QMK_TestGetPrecompiledFamilyCount(family: i32) callconv(.c) i32 {
+    if (!compiled_shortcuts_test_observability or family < 0 or family >= 14) return -1;
+    return @intCast(g_precompiledFamilyCounts[@intCast(family)]);
+}
+
+/// Returns the current QMKCore-owned runtime storage length for the family.
+/// Holds, double taps, and tap-holds share the context-action store and thus
+/// return its aggregate length; their precompiled subtype counts are reported
+/// separately by QMK_TestGetPrecompiledFamilyCount.
+export fn QMK_TestGetRuntimeFamilyCount(family: i32) callconv(.c) i32 {
+    if (!compiled_shortcuts_test_observability or family < 0 or family >= 14) return -1;
+    return switch (family) {
+        0 => @intCast(g_runtimeModifiersLen),
+        1 => @intCast(g_runtimePassthroughsLen),
+        2 => @intCast(g_runtimeHotkeysLen),
+        3, 4, 6 => @intCast(g_runtimeContextActionsLen),
+        5 => @intCast(g_runtimeHotkeysLen),
+        7 => @intCast(g_runtimeCombosLen),
+        8 => @intCast(g_runtimeInstantCombosLen),
+        9 => countRuntimeChordsByMode(0),
+        10 => countRuntimeChordsByMode(1),
+        11 => @intCast(g_runtimeHotstringLen),
+        12 => @atomicLoad(i32, &g_panicExitEnabled, .acquire),
+        13 => @atomicLoad(i32, &g_nativeReloadEnabled, .acquire),
+        else => -1,
+    };
+}
+
+fn countRuntimeChordsByMode(mode: u8) i32 {
+    var count: i32 = 0;
+    var i: usize = 0;
+    while (i < g_runtimeChordsLen) : (i += 1) {
+        if (g_runtimeChords[i].mode == mode) count += 1;
+    }
+    return count;
+}
+
+/// Test-only identity accessor for the compiled-shape gate.  It exposes only
+/// stable key/mode fields from QMK-owned runtime rows; it does not participate
+/// in dispatch and is unavailable unless test observability is enabled.
+/// `which` is family-specific: combos use 0/1 for primary/secondary and 2 for
+/// mode; chords use 0 for key_count and 1..5 for sorted VKs; all other families
+/// return their leading VK/key field.
+export fn QMK_TestGetRuntimeFamilyKey(family: i32, index_in: i32, which: i32) callconv(.c) i32 {
+    if (!compiled_shortcuts_test_observability or family < 0 or family >= 14 or index_in < 0 or which < 0)
+        return -1;
+    const index: usize = @intCast(index_in);
+    return switch (family) {
+        0 => if (index < g_runtimeModifiersLen) g_runtimeModifiers[index].vk else -1,
+        1 => if (index < g_runtimePassthroughsLen) g_runtimePassthroughs[index].vk else -1,
+        2, 5 => if (index < g_runtimeHotkeysLen) g_runtimeHotkeys[index].triggerVK else -1,
+        3, 4, 6 => if (index < g_runtimeContextActionsLen) g_runtimeContextActions[index].triggerVK else -1,
+        7 => if (index < g_runtimeCombosLen) switch (which) {
+            0 => g_runtimeCombos[index].primaryVK,
+            1 => g_runtimeCombos[index].secondaryVK,
+            2 => @intCast(g_runtimeCombos[index].mode),
+            else => -1,
+        } else -1,
+        8 => if (index < g_runtimeInstantCombosLen) switch (which) {
+            0 => g_runtimeInstantCombos[index].primaryVK,
+            1 => g_runtimeInstantCombos[index].secondaryVK,
+            2 => @intCast(g_runtimeInstantCombos[index].mode),
+            else => -1,
+        } else -1,
+        9, 10 => if (runtimeChordIndexForMode(family - 9, index)) |chord_index| switch (which) {
+            0 => @intCast(g_runtimeChords[chord_index].keyCount),
+            1...5 => g_runtimeChords[chord_index].vks[@intCast(which - 1)],
+            else => -1,
+        } else -1,
+        11 => if (index < g_runtimeHotstringLen and which == 0)
+            @intCast(g_runtimeHotstringTriggerBytes[index][0])
+        else -1,
+        12 => if (index == 0 and which == 0) @atomicLoad(i32, &g_panicExitVK, .acquire) else -1,
+        13 => if (index == 0 and which == 0) @atomicLoad(i32, &g_nativeReloadVK, .acquire) else -1,
+        else => -1,
+    };
+}
+
+/// Test-only input-state probes used by the mixed compiled/runtime parity
+/// runner. They expose no production behavior and are enabled only by the
+/// same explicit observability build option as the family counters.
+export fn QMK_TestGetPendingSoloVK() callconv(.c) i32 {
+    if (!compiled_shortcuts_test_observability) return -1;
+    return g_pendingSoloVK;
+}
+
+export fn QMK_TestGetRuntimeFlags() callconv(.c) u32 {
+    if (!compiled_shortcuts_test_observability) return 0;
+    return g_runtimeFlags;
+}
+
+fn runtimeChordIndexForMode(mode: i32, wanted: usize) ?usize {
+    var seen: usize = 0;
+    var i: usize = 0;
+    while (i < g_runtimeChordsLen) : (i += 1) {
+        if (@as(i32, g_runtimeChords[i].mode) != mode) continue;
+        if (seen == wanted) return i;
+        seen += 1;
+    }
+    return null;
+}
+
+fn mixedCoreHasCompiledRows() bool {
+    for (g_precompiledFamilyCounts) |count| if (count != 0) return true;
+    return false;
+}
+
+fn mixedCoreHasRuntimeSuffix() bool {
+    return g_runtimeHotkeysLen > g_runtimeHotkeysPublishedLen or
+        g_runtimeContextActionsLen > g_runtimeContextActionsPublishedLen or
+        g_runtimeModifiersLen > g_runtimeModifiersPublishedLen or
+        g_runtimePassthroughsLen > g_runtimePassthroughsPublishedLen or
+        g_runtimeCombosLen > g_runtimeCombosPublishedLen or
+        g_runtimeInstantCombosLen > g_runtimeInstantCombosPublishedLen or
+        g_runtimeChordsLen > g_runtimeChordsPublishedLen or
+        g_runtimeHotstringLen > g_runtimeHotstringPublishedLen;
+}
+
+fn mixedCoreHasExactRuntimeOverride() bool {
+    var i: usize = 0;
+    while (i < g_runtimeHotkeysPublishedLen) : (i += 1)
+        if (runtimeHotkeyOverriddenByRuntime(i)) return true;
+    i = 0;
+    while (i < g_runtimeContextActionsPublishedLen) : (i += 1)
+        if (runtimeContextActionOverriddenByRuntime(i)) return true;
+    i = 0;
+    while (i < g_runtimeModifiersPublishedLen) : (i += 1)
+        if (runtimeModifierOverriddenByRuntime(i)) return true;
+    i = 0;
+    while (i < g_runtimePassthroughsPublishedLen) : (i += 1)
+        if (runtimePassthroughOverriddenByRuntime(i)) return true;
+    i = 0;
+    while (i < g_runtimeChordsPublishedLen) : (i += 1)
+        if (runtimeChordOverriddenByRuntime(i)) return true;
+    i = 0;
+    while (i < g_runtimeHotstringPublishedLen) : (i += 1)
+        if (runtimeHotstringOverriddenByRuntime(i)) return true;
+    return false;
+}
+
+fn mixedCoreHasContextSpecificCoexistence() bool {
+    var i: usize = 0;
+    while (i < g_runtimeHotkeysPublishedLen) : (i += 1) {
+        const compiled = g_runtimeHotkeys[i];
+        if (compiled.specificityMask != 0) continue;
+        var j: usize = g_runtimeHotkeysPublishedLen;
+        while (j < g_runtimeHotkeysLen) : (j += 1) {
+            const runtime = g_runtimeHotkeys[j];
+            if (runtime.triggerVK == compiled.triggerVK and runtime.specificityMask != 0) return true;
+        }
+    }
+    return false;
+}
+
+fn mixedCoreHasHeldEFixture() bool {
+    var i: usize = 0;
+    while (i < g_runtimeHotkeysLen) : (i += 1) {
+        const row = g_runtimeHotkeys[i];
+        if (row.triggerVK == 0x45 and (row.physicalModVK == 0x14 or row.physicalModsRequired != 0)) return true;
+    }
+    return false;
+}
+
+/// QMKCore-only coexistence audit. The excluded runner supplies deterministic
+/// registrations and replay; this export reports what the loaded DLL can
+/// prove from its current state without mutating it. `out_total` is 5 and the
+/// checks are: compiled prefix, runtime suffix, exact override, contextual
+/// coexistence/compiled fallback, and held-e plus clean lifecycle. `out_flags`
+/// reports missing evidence: bit 0 compiled rows, bit 1 runtime suffix, bit 2
+/// exact override, bit 3 contextual coexistence, bit 4 held-e, bit 5 lifecycle.
+export fn QMK_TestGetMixedCoexistencePassTotal(out_passed: *i32, out_total: *i32, out_flags: *u32) callconv(.c) i32 {
+    if (!compiled_shortcuts_test_observability) return 0;
+    out_passed.* = 0;
+    out_total.* = 5;
+    out_flags.* = 0;
+    if (mixedCoreHasCompiledRows()) out_passed.* += 1 else out_flags.* |= 1 << 0;
+    if (mixedCoreHasRuntimeSuffix()) out_passed.* += 1 else out_flags.* |= 1 << 1;
+    if (mixedCoreHasExactRuntimeOverride()) out_passed.* += 1 else out_flags.* |= 1 << 2;
+    if (mixedCoreHasContextSpecificCoexistence()) out_passed.* += 1 else out_flags.* |= 1 << 3;
+    const lifecycle_clean = g_trackedPhysicalKeysDown == 0 and g_active_physical_modifiers == 0 and
+        g_pendingCBsLen == 0 and g_keyCount == 0 and g_unreleasedKeyCount == 0;
+    if (mixedCoreHasHeldEFixture() and lifecycle_clean) out_passed.* += 1 else {
+        if (!mixedCoreHasHeldEFixture()) out_flags.* |= 1 << 4;
+        if (!lifecycle_clean) out_flags.* |= 1 << 5;
+    }
+    return 1;
+}
+
+export fn QMK_SetNativeSuspendHotkeyEntry(hotkeySpec: [*:0]const u16, enabled: i32) callconv(.c) i32 {
+    const spec = wideZSpan(hotkeySpec);
+    const parsed = parseRuntimeHotkeySpecText16(spec) orelse {
+        @atomicStore(i32, &g_nativeSuspendEnabled, 0, .release);
+        return 0;
+    };
+    return QMK_SetNativeSuspendHotkey(parsed.vk, parsed.modsRequired, parsed.modsForbidden, enabled);
+}
+
+export fn QMK_SetNativeSuspendHotkey(vk: i32, mods_required: u16, mods_forbidden: u16, enabled: i32) callconv(.c) i32 {
+    if (vk <= 0 or vk >= VK_COUNT) {
+        @atomicStore(i32, &g_nativeSuspendEnabled, 0, .release);
+        return 0;
+    }
+    @atomicStore(i32, &g_nativeSuspendVK, vk, .release);
+    @atomicStore(u16, &g_nativeSuspendModsRequired, mods_required, .release);
+    @atomicStore(u16, &g_nativeSuspendModsForbidden, mods_forbidden, .release);
+    @atomicStore(i32, &g_nativeSuspendEnabled, if (enabled != 0) 1 else 0, .release);
+    return 1;
+}
+
+/// Test-only native-control probe. Control IDs are 0 = panic-exit and
+/// 1 = native-reload; unlike row-backed families these controls intentionally
+/// have one active slot, so expose their configured identity directly.
+export fn QMK_TestGetNativeControl(control: i32, field: i32) callconv(.c) i32 {
+    if (!compiled_shortcuts_test_observability or control < 0 or control > 1 or field < 0 or field > 3)
+        return -1;
+    return switch (control) {
+        0 => switch (field) {
+            0 => @atomicLoad(i32, &g_panicExitVK, .acquire),
+            1 => @atomicLoad(u16, &g_panicExitModsRequired, .acquire),
+            2 => @atomicLoad(u16, &g_panicExitModsForbidden, .acquire),
+            3 => @atomicLoad(i32, &g_panicExitEnabled, .acquire),
+            else => -1,
+        },
+        1 => switch (field) {
+            0 => @atomicLoad(i32, &g_nativeReloadVK, .acquire),
+            1 => @atomicLoad(u16, &g_nativeReloadModsRequired, .acquire),
+            2 => @atomicLoad(u16, &g_nativeReloadModsForbidden, .acquire),
+            3 => @atomicLoad(i32, &g_nativeReloadEnabled, .acquire),
+            else => -1,
+        },
+        else => -1,
+    };
+}
+
+/// Test-only contextual-tap probe.  This reports the first runtime row for a
+/// trigger whose action kind is the contextual tap kind, plus the arm state
+/// for that VK.  It is observational only and is not used by dispatch.
+export fn QMK_TestGetContextualTapDebug(
+    trigger_vk: i32,
+    out_callback_id: *i32,
+    out_specificity_mask: *u8,
+    out_context_kind: *u8,
+    out_armed: *u8,
+    out_last_down_vk: *i32,
+    out_context_allowed: *u8,
+    out_ready_match: *i32,
+    out_global_match: *i32,
+) callconv(.c) i32 {
+    if (!compiled_shortcuts_test_observability or trigger_vk < 0 or trigger_vk >= VK_COUNT) return -1;
+    out_callback_id.* = -1;
+    out_specificity_mask.* = 0;
+    out_context_kind.* = 0;
+    out_armed.* = if (g_contextualTapArmed[@intCast(trigger_vk)]) 1 else 0;
+    out_last_down_vk.* = g_lastPhysicalDownVK;
+    out_context_allowed.* = 0;
+    out_ready_match.* = matchRuntimeContextualTapHotkeyPass(trigger_vk, 0, false);
+    out_global_match.* = matchRuntimeContextualTapHotkeyPass(trigger_vk, 0, true);
+    var i: usize = 0;
+    while (i < g_runtimeHotkeysLen) : (i += 1) {
+        const row = g_runtimeHotkeys[i];
+        if (row.triggerVK != trigger_vk or row.actionKind != 1) continue;
+        out_callback_id.* = row.callbackId;
+        out_specificity_mask.* = row.specificityMask;
+        out_context_kind.* = row.contextKind;
+        out_context_allowed.* = if (runtimeHotkeyContextAllows(i)) 1 else 0;
+        return 1;
+    }
+    return 0;
+}
+
 /// Reports what the DLL actually stored for a runtime hotstring, so a
 /// registration problem can be separated from a paste problem instead of
 /// inferred from behavior.
@@ -14902,6 +16245,18 @@ fn runtimeHotstringDuplicateAt(index: usize) bool {
         if (!runtimeHotstringIdentityMatches(g_runtimeHotstringEntries[i], entry.trigger, entry.options)) continue;
         if (g_runtimeHotstringCallbackIds[i] != g_runtimeHotstringCallbackIds[index]) continue;
         if (runtimeHotstringContextsEquivalent(i, index)) return true;
+    }
+    return false;
+}
+
+fn runtimeHotstringOverriddenByRuntime(index: usize) bool {
+    if (index >= g_runtimeHotstringPublishedLen) return false;
+    const compiled = g_runtimeHotstringEntries[index];
+    var runtime_index = g_runtimeHotstringPublishedLen;
+    while (runtime_index < g_runtimeHotstringLen) : (runtime_index += 1) {
+        const runtime = g_runtimeHotstringEntries[runtime_index];
+        if (!hotstrings.bytesEqual(compiled.trigger, runtime.trigger, false)) continue;
+        if (runtimeHotstringContextsEquivalent(index, runtime_index)) return true;
     }
     return false;
 }
@@ -15499,6 +16854,13 @@ export fn QMK_GetNativePasteStats(
     outPayloadChars.* = @intCast(g_nativeHotstringPayloads.len + g_nativeHotkeyPayloads.len);
 }
 
+/// Test-only count for calls that reach the existing direct key-send helper.
+export fn QMK_TestGetDirectKeySendCount() callconv(.c) u32 {
+    if (!compiled_shortcuts_test_observability) return 0;
+    return @atomicLoad(u32, &g_testDirectKeySendCount, .monotonic);
+}
+
+
 /// Copies the matcher's committed-character buffer out as UTF-16 so a caller
 /// can see exactly which keystrokes reached the hotstring engine. The buffer
 /// is only fed from the key-up direct-tap path, so a key emitted through any
@@ -15784,7 +17146,7 @@ fn setupChordVKs(rawVks: [5]i32, callbackId: i32) void {
     for (0..vkCount) |ci| {
         entry.vks[ci] = vks[ci];
         if (vks[ci] >= 0 and vks[ci] < VK_COUNT) {
-            mask |= @as(u16, @intCast(g_keyModMask[@intCast(vks[ci])]));
+            mask |= @as(u16, @intCast(g_key_virtual_modifier_mask[@intCast(vks[ci])]));
         }
     }
     entry.modMask = mask;
@@ -15800,7 +17162,7 @@ fn appendRuntimeChord(raw_in: [5]i32, row_in: RuntimeChord, context_text: []cons
     if (raw_vks[0] == 0 or raw_vks[1] == 0) return false;
     var row = row_in;
     if (row.mode > 1) return false;
-    if (row.mode == 0 and row.callbackId < 0) return false;
+    if (row.mode == 0 and row.callbackId < 0 and !isCompiledZigCallbackId(row.callbackId)) return false;
     if (row.mode == 1 and row.targetVK == 0) return false;
     if (!ensureRuntimeCallbackSuspendExemptFor(row.callbackId, row.suspendExempt)) return false;
     sortSmall5(&raw_vks, raw_vks.len);
@@ -15833,6 +17195,11 @@ fn appendRuntimeChord(raw_in: [5]i32, row_in: RuntimeChord, context_text: []cons
     if (text_len != 0) @memcpy(g_runtimeChordTexts[slot][0..text_len], context_text[0..text_len]);
     row.specificityMask = runtimeHotkeySpecificityMask(row.contextKind, g_runtimeChordTexts[slot][0..text_len]);
     g_runtimeChords[slot] = row;
+    if (row.specificityMask != 0) {
+        for (row.vks[0..@as(usize, @intCast(row.keyCount))]) |vk| {
+            if (vk >= 0 and vk < VK_COUNT) g_runtimeChordContextParticipant[@intCast(vk)] = true;
+        }
+    }
     _ = markRuntimeCallbackSuspendExempt(row.callbackId, row.suspendExempt);
     g_runtimeChordDependencyMask |= row.specificityMask;
     g_runtimeChordsLen += 1;
@@ -16269,7 +17636,7 @@ fn setupChordText(k1: [*:0]const u16, k2: [*:0]const u16, k3: [*:0]const u16, k4
     for (0..vkCount) |ci| {
         entry.vks[ci] = vks[ci];
         if (vks[ci] >= 0 and vks[ci] < VK_COUNT) {
-            mask |= @as(u16, @intCast(g_keyModMask[@intCast(vks[ci])]));
+            mask |= @as(u16, @intCast(g_key_virtual_modifier_mask[@intCast(vks[ci])]));
         }
     }
     entry.modMask = mask;
@@ -16302,7 +17669,7 @@ export fn QMK_KeyDown(key: [*:0]const u16) callconv(.c) void {
         beginHotPathActivity();
         defer endHotPathActivity(true);
         if (isModVK(vk)) {
-            _ = applyPhysicalModifierEvent(vk, true);
+            _ = apply_physical_modifier_event(vk, true);
         } else {
             setPhysicalKeyDownState(vk, true);
         }
@@ -16316,7 +17683,7 @@ export fn QMK_KeyUp(key: [*:0]const u16) callconv(.c) void {
         beginHotPathActivity();
         defer endHotPathActivity(false);
         if (isModVK(vk)) {
-            _ = applyPhysicalModifierEvent(vk, false);
+            _ = apply_physical_modifier_event(vk, false);
         } else {
             setPhysicalKeyDownState(vk, false);
         }
@@ -16370,6 +17737,7 @@ inline fn ensureQmkInputThreadPriority() void {
 // timers are signalled to AHK via PostThreadMessage — no result struct write,
 // no blocking wait, OnKeyDown/OnKeyUp return immediately after one DllCall.
 inline fn processKeyEventHot(vk: i32, isDown: i32) void {
+    @setEvalBranchQuota(1_000_000);
     if (isDown != 0) {
         const pke8_start = profStartSect();
         cancelRepeatForDifferentKeyDown(vk);
@@ -16504,7 +17872,86 @@ inline fn physicalModifierTrackingVK(vk: i32) i32 {
 inline fn queueAnyHotkeyIfMatchedWithGenericModFallback(vk: i32, active_mods: u16, is_down: bool) bool {
     if (queueAnyHotkeyIfMatched(vk, active_mods, is_down)) return true;
     const generic_vk = genericModifierVKForVK(vk);
-    if (generic_vk != vk) return queueAnyHotkeyIfMatched(generic_vk, active_mods, is_down);
+    if (generic_vk != vk) {
+        return queueAnyHotkeyIfMatched(generic_vk, active_mods, is_down);
+    }
+    return false;
+}
+
+fn runtimeModifierOverriddenByRuntime(index: usize) bool {
+    if (index >= g_runtimeModifiersPublishedLen) return false;
+    const compiled = g_runtimeModifiers[index];
+    var runtime_index = g_runtimeModifiersPublishedLen;
+    while (runtime_index < g_runtimeModifiersLen) : (runtime_index += 1) {
+        const runtime = g_runtimeModifiers[runtime_index];
+        if (runtime.vk != compiled.vk or runtime.modType != compiled.modType or
+            runtime.contextKind != compiled.contextKind or
+            runtime.contextNegated != compiled.contextNegated) continue;
+        if (runtimeContextTextEqual(g_runtimeModifierTexts[index][0..@as(usize, @intCast(compiled.contextLen))],
+            g_runtimeModifierTexts[runtime_index][0..@as(usize, @intCast(runtime.contextLen))])) return true;
+    }
+    return false;
+}
+
+fn runtimeComboOverriddenByRuntime(row: RuntimeCombo, context_text: []const u16) bool {
+    var i: usize = g_runtimeCombosPublishedLen;
+    while (i < g_runtimeCombosLen) : (i += 1) {
+        const runtime = g_runtimeCombos[i];
+        if (runtime.primaryVK != row.primaryVK or runtime.secondaryVK != row.secondaryVK or
+            runtime.mode != row.mode or
+            runtime.contextKind != row.contextKind or runtime.contextNegated != row.contextNegated) continue;
+        if (runtimeContextTextEqual(g_runtimeComboTexts[i][0..@as(usize, @intCast(runtime.contextLen))], context_text)) return true;
+    }
+    i = g_runtimeInstantCombosPublishedLen;
+    while (i < g_runtimeInstantCombosLen) : (i += 1) {
+        const runtime = g_runtimeInstantCombos[i];
+        if (runtime.primaryVK != row.primaryVK or runtime.secondaryVK != row.secondaryVK or
+            runtime.mode != row.mode or
+            runtime.contextKind != row.contextKind or runtime.contextNegated != row.contextNegated) continue;
+        if (runtimeContextTextEqual(g_runtimeInstantComboTexts[i][0..@as(usize, @intCast(runtime.contextLen))], context_text)) return true;
+    }
+    return false;
+}
+
+fn runtimeContextActionOverriddenByRuntime(index: usize) bool {
+    if (index >= g_runtimeContextActionsPublishedLen) return false;
+    const compiled = g_runtimeContextActions[index];
+    var runtime_index = g_runtimeContextActionsPublishedLen;
+    while (runtime_index < g_runtimeContextActionsLen) : (runtime_index += 1) {
+        const runtime = g_runtimeContextActions[runtime_index];
+        if (runtime.triggerVK != compiled.triggerVK or
+            runtime.actionKind != compiled.actionKind or
+            runtime.contextKind != compiled.contextKind or
+            runtime.contextNegated != compiled.contextNegated) continue;
+        if (runtimeContextActionTextMatches(index, runtimeContextActionText(runtime_index))) return true;
+    }
+    return false;
+}
+
+// Compiled rows occupy the published prefix; runtime setup appends rows after
+// that prefix.  Keep both rows in storage, but let a later runtime row own the
+// active dispatch identity.  Callback/action payloads are deliberately not
+// compared: replacing a compiled callback with a runtime callback is the
+// purpose of this overlay.
+fn runtimeHotkeyOverriddenByRuntime(index: usize) bool {
+    if (index >= g_runtimeHotkeysPublishedLen) return false;
+    const compiled = g_runtimeHotkeys[index];
+    var runtime_index = g_runtimeHotkeysPublishedLen;
+    while (runtime_index < g_runtimeHotkeysLen) : (runtime_index += 1) {
+        const runtime = g_runtimeHotkeys[runtime_index];
+        if (runtime.triggerVK != compiled.triggerVK or
+            runtime.modsRequired != compiled.modsRequired or
+            runtime.modsForbidden != compiled.modsForbidden or
+            runtime.triggerKind != compiled.triggerKind or
+            runtime.actionKind != compiled.actionKind or
+            runtime.contextKind != compiled.contextKind or
+            runtime.contextNegated != compiled.contextNegated or
+            runtime.physicalModVK != compiled.physicalModVK or
+            runtime.physicalModsRequired != compiled.physicalModsRequired or
+            runtime.physicalModsForbidden != compiled.physicalModsForbidden) continue;
+        if (runtimeContextTextEqual(g_runtimeHotkeyContexts[index][0..@as(usize, @intCast(compiled.contextLen))],
+            g_runtimeHotkeyContexts[runtime_index][0..@as(usize, @intCast(runtime.contextLen))])) return true;
+    }
     return false;
 }
 
@@ -16515,35 +17962,36 @@ fn runtimePhysicalModifiersAllow(hk: RuntimeHotkey) bool {
         if (physical_mod_vk != 0 and !physicalKeyDownVK(physical_mod_vk)) return false;
         required = physicalModifierLRBitForVK(physical_mod_vk);
     }
-    const active = g_physicalHotkeyLRModMask;
+    const active = g_lr_active_physical_modifiers;
     return (active & required) == required and
         (active & hk.physicalModsForbidden) == 0;
 }
 
-inline fn updatePhysicalHotkeyModMask(vk: i32, is_down: bool, was_down: bool) void {
+// Updates physical modifier-family values selected for output.
+inline fn update_physical_modifiers_to_send(vk: i32, is_down: bool, was_down: bool) void {
     if (is_down == was_down) return;
     const lr_bit = physicalModifierLRBitForVK(vk);
     if (lr_bit != 0) {
         if (is_down) {
-            g_physicalHotkeyLRModMask |= lr_bit;
+            g_lr_active_physical_modifiers |= lr_bit;
         } else {
-            g_physicalHotkeyLRModMask &= ~lr_bit;
+            g_lr_active_physical_modifiers &= ~lr_bit;
         }
     }
     const slot_i = hotkeyModSlotForVK(vk);
     if (slot_i < 0) return;
     const slot: usize = @intCast(slot_i);
     if (is_down) {
-        if (g_physicalHotkeyModCounts[slot] != std.math.maxInt(u8)) {
-            g_physicalHotkeyModCounts[slot] += 1;
+        if (g_active_physical_modifier_key_counts_by_category[slot] != std.math.maxInt(u8)) {
+            g_active_physical_modifier_key_counts_by_category[slot] += 1;
         }
-        g_physicalHotkeyModMask |= hotkeyModBitForSlot(slot);
+        g_which_physical_modifiers_to_send |= hotkeyModBitForSlot(slot);
     } else {
-        if (g_physicalHotkeyModCounts[slot] > 0) {
-            g_physicalHotkeyModCounts[slot] -= 1;
+        if (g_active_physical_modifier_key_counts_by_category[slot] > 0) {
+            g_active_physical_modifier_key_counts_by_category[slot] -= 1;
         }
-        if (g_physicalHotkeyModCounts[slot] == 0) {
-            g_physicalHotkeyModMask &= ~hotkeyModBitForSlot(slot);
+        if (g_active_physical_modifier_key_counts_by_category[slot] == 0) {
+            g_which_physical_modifiers_to_send &= ~hotkeyModBitForSlot(slot);
         }
     }
 }
@@ -16559,7 +18007,7 @@ inline fn setPhysicalKeyDownState(vk: i32, is_down: bool) void {
     } else if (!is_down and was_down) {
         if (g_trackedPhysicalKeysDown > 0) g_trackedPhysicalKeysDown -= 1;
     }
-    updatePhysicalHotkeyModMask(vk, is_down, was_down);
+    update_physical_modifiers_to_send(vk, is_down, was_down);
     if (!is_down) clearPhysicalModifierHiddenFromOs(vk);
 }
 
@@ -16569,7 +18017,8 @@ inline fn startModPollThreadForPhysicalModifier() void {
     // helper would only add background wakeups after modifier activity.
 }
 
-inline fn applyPhysicalModifierEvent(vk: i32, is_down: bool) i32 {
+// Applies one physical modifier transition to tracked physical and Windows-facing state.
+inline fn apply_physical_modifier_event(vk: i32, is_down: bool) i32 {
     if (!isModVK(vk)) return vk;
     const tracked_vk = physicalModifierTrackingVK(vk);
     const tracked_valid = tracked_vk >= 0 and tracked_vk < VK_COUNT;
@@ -16592,7 +18041,7 @@ inline fn applyPhysicalModifierEvent(vk: i32, is_down: bool) i32 {
 inline fn markPhysicalModifierHiddenFromOs(vk: i32) void {
     const bit = physicalModifierLRBitForVK(vk);
     if (bit == 0) return;
-    if ((g_physicalHotkeyLRModMask & bit) != 0) {
+    if ((g_lr_active_physical_modifiers & bit) != 0) {
         markPhysicalModsHiddenFromOs(bit);
     }
 }
@@ -16619,11 +18068,12 @@ inline fn flushRuntimePublishAfterKeyEvent(is_down: bool) void {
     }
 }
 
-inline fn computeHotkeyModBitmask() u16 {
+// Combines physical and virtual modifier output state before sending.
+inline fn compute_modifiers_to_send() u16 {
     // Physical modifiers and QMK virtual/home-row modifiers select the same
     // prebuilt VK/modifier bucket. A modifier state change never rebuilds the
     // runtime hotkey index or runs context matching.
-    return g_physicalHotkeyModMask | (g_activeModMask & 0x000F);
+    return g_which_physical_modifiers_to_send | (g_active_virtual_modifiers & 0x000F);
 }
 
 inline fn panicExitHotkeyMatches(vk: i32, active_mods: u16, is_down: bool) bool {
@@ -16652,12 +18102,36 @@ inline fn handleNativeReloadIfMatched(vk: i32, active_mods: u16, is_down: bool) 
     QMK_NativeReload();
 }
 
+inline fn nativeSuspendHotkeyMatches(vk: i32, active_mods: u16, is_down: bool) bool {
+    return is_down and
+        @atomicLoad(i32, &g_nativeSuspendEnabled, .acquire) != 0 and
+        vk == @atomicLoad(i32, &g_nativeSuspendVK, .acquire) and
+        (active_mods & @atomicLoad(u16, &g_nativeSuspendModsRequired, .acquire)) == @atomicLoad(u16, &g_nativeSuspendModsRequired, .acquire) and
+        (active_mods & @atomicLoad(u16, &g_nativeSuspendModsForbidden, .acquire)) == 0;
+}
+
+inline fn handleNativeSuspendIfMatched(vk: i32, active_mods: u16, is_down: bool) bool {
+    const configured_vk = @atomicLoad(i32, &g_nativeSuspendVK, .acquire);
+    if (!is_down) {
+        if (g_nativeSuspendKeyDown and vk == configured_vk) {
+            g_nativeSuspendKeyDown = false;
+            return true;
+        }
+        return false;
+    }
+    if (g_nativeSuspendKeyDown and vk == configured_vk) return true;
+    if (!nativeSuspendHotkeyMatches(vk, active_mods, is_down)) return false;
+    g_nativeSuspendKeyDown = true;
+    _ = QMK_ToggleRuntimeHotkeysSuspended();
+    return true;
+}
+
 inline fn physicalMenuModifierIsDown() bool {
-    return (g_physicalHotkeyModMask & (hotkeys.HOTKEY_MOD_ALT | hotkeys.HOTKEY_MOD_WIN)) != 0;
+    return (g_which_physical_modifiers_to_send & (hotkeys.HOTKEY_MOD_ALT | hotkeys.HOTKEY_MOD_WIN)) != 0;
 }
 
 inline fn physicalControlModifierIsDown() bool {
-    return (g_physicalHotkeyModMask & hotkeys.HOTKEY_MOD_CTRL) != 0;
+    return (g_which_physical_modifiers_to_send & hotkeys.HOTKEY_MOD_CTRL) != 0;
 }
 
 inline fn ringAddInterceptionMenuMaskIfNeeded() void {
@@ -16668,7 +18142,8 @@ inline fn ringAddInterceptionMenuMaskIfNeeded() void {
 }
 
 inline fn releasePhysicalModsForSuppressingHotkey() void {
-    if (g_physicalHotkeyModMask == 0) return;
+    @setEvalBranchQuota(1_000_000);
+    if (g_which_physical_modifiers_to_send == 0) return;
     const visible = snapshotVisiblePhysicalMods();
     if (visible == 0 and !physicalKeyDownVK(0x12) and !physicalKeyDownVK(0x11) and !physicalKeyDownVK(0x10)) return;
     ringReset();
@@ -16691,15 +18166,15 @@ inline fn shouldForwardNativeModifiedStroke(vk: i32, is_down: bool) bool {
         // hotkey, a real physical modifier chord belongs to Windows. Virtual
         // QMK modifiers still need the buffer path so QMK can synthesize the
         // modifier-wrapped output itself.
-        return g_physicalHotkeyModMask != 0;
+        return g_which_physical_modifiers_to_send != 0;
     }
-    return g_nativePassthroughDown[vki];
+    return g_native_passthrough_to_windows[vki];
 }
 
 inline fn recordNativeModifiedStrokeForwarded(vk: i32, is_down: bool) void {
     if (vk < 0 or vk >= VK_COUNT) return;
     const vki: usize = @intCast(vk);
-    g_nativePassthroughDown[vki] = is_down;
+    g_native_passthrough_to_windows[vki] = is_down;
 }
 
 inline fn asciiLower16(c: u16) u16 {
@@ -17033,6 +18508,7 @@ fn buildRuntimeGlobalHotkeyIndex(next: u32) bool {
     var i: usize = 0;
     while (i < g_runtimeHotkeysLen) : (i += 1) {
         const hk = g_runtimeHotkeys[i];
+        if (runtimeHotkeyOverriddenByRuntime(i)) continue;
         if (hk.specificityMask != 0) continue;
         if (hk.contextNegated) continue;
         if (hk.triggerVK <= 0 or hk.triggerVK >= VK_COUNT) continue;
@@ -17060,6 +18536,7 @@ fn buildRuntimeGlobalHotkeyIndex(next: u32) bool {
     i = 0;
     while (i < g_runtimeHotkeysLen) : (i += 1) {
         const hk = g_runtimeHotkeys[i];
+        if (runtimeHotkeyOverriddenByRuntime(i)) continue;
         if (hk.specificityMask != 0 or hk.contextNegated) continue;
         if (hk.triggerVK <= 0 or hk.triggerVK >= VK_COUNT) continue;
         const hotkey_vk: usize = @intCast(hk.triggerVK);
@@ -17101,6 +18578,7 @@ fn rebuildActiveRuntimeHotkeyIndex() bool {
     var i: usize = 0;
     while (i < g_runtimeHotkeysLen) : (i += 1) {
         const hk = g_runtimeHotkeys[i];
+        if (runtimeHotkeyOverriddenByRuntime(i)) continue;
         if (hk.specificityMask == 0) continue; // Globals live in the permanent index.
         allowed[i] = runtimeHotkeyContextAllows(i);
         if (!allowed[i]) continue;
@@ -17128,6 +18606,7 @@ fn rebuildActiveRuntimeHotkeyIndex() bool {
     } ** VK_COUNT;
     i = 0;
     while (i < g_runtimeHotkeysLen) : (i += 1) {
+        if (runtimeHotkeyOverriddenByRuntime(i)) continue;
         if (!allowed[i]) continue;
         const hk = g_runtimeHotkeys[i];
         if (hk.triggerVK <= 0 or hk.triggerVK >= VK_COUNT) continue;
@@ -17266,6 +18745,22 @@ fn runtimeModifierAllows(index: usize) bool {
     return runtimeContextCriterionAllows(row.specificityMask, row.contextNegated, runtimeModifierText(index));
 }
 
+inline fn runtimePassthroughText(index: usize) []const u16 {
+    const len: usize = @intCast(g_runtimePassthroughs[index].contextLen);
+    return g_runtimePassthroughTexts[index][0..len];
+}
+
+fn runtimePassthroughAllows(index: usize) bool {
+    const row = g_runtimePassthroughs[index];
+    if (@atomicLoad(i32, &g_runtimeHotkeysSuspended, .acquire) != 0 and !row.suspendExempt) return false;
+    return runtimeContextCriterionAllows(row.specificityMask, row.contextNegated, runtimePassthroughText(index));
+}
+
+inline fn activeRuntimePassthroughs() *const RuntimePassthroughActiveBank {
+    const idx = @atomicLoad(u32, &g_activeRuntimePassthroughBank, .acquire);
+    return &g_runtimePassthroughActiveBanks[idx];
+}
+
 inline fn activeRuntimeContextActions() *const RuntimeContextActionActiveBank {
     const idx = @atomicLoad(u32, &g_activeRuntimeContextActionBank, .acquire);
     return &g_runtimeContextActionActiveBanks[idx];
@@ -17273,24 +18768,24 @@ inline fn activeRuntimeContextActions() *const RuntimeContextActionActiveBank {
 
 inline fn effectiveHoldCallbackId(vk: usize) i32 {
     const runtime_id = activeRuntimeContextActions().hold[vk];
-    return if (runtime_id >= 0) runtime_id else g_hcFlat[vk];
+    return if (runtime_id >= 0 or isCompiledZigCallbackId(runtime_id)) runtime_id else g_hcFlat[vk];
 }
 
 inline fn effectiveDoubleTapCallbackId(vk: usize) i32 {
     const runtime_id = activeRuntimeContextActions().doubleTap[vk];
-    return if (runtime_id >= 0) runtime_id else g_modDtFlat[vk];
+    return if (runtime_id >= 0 or isCompiledZigCallbackId(runtime_id)) runtime_id else g_modDtFlat[vk];
 }
 
 inline fn effectiveTapHoldTapCallbackId(vk: usize) i32 {
     const bank = activeRuntimeContextActions();
     if (bank.tapHoldTuningSet[vk]) return bank.tapHoldTap[vk];
-    return if (bank.tapHoldTap[vk] >= 0) bank.tapHoldTap[vk] else g_tapHoldTapCallbackId[vk];
+    return if (bank.tapHoldTap[vk] >= 0 or isCompiledZigCallbackId(bank.tapHoldTap[vk])) bank.tapHoldTap[vk] else g_tapHoldTapCallbackId[vk];
 }
 
 inline fn effectiveTapHoldHoldCallbackId(vk: usize) i32 {
     const bank = activeRuntimeContextActions();
     if (bank.tapHoldTuningSet[vk]) return bank.tapHoldHold[vk];
-    return if (bank.tapHoldHold[vk] >= 0) bank.tapHoldHold[vk] else g_tapHoldHoldCallbackId[vk];
+    return if (bank.tapHoldHold[vk] >= 0 or isCompiledZigCallbackId(bank.tapHoldHold[vk])) bank.tapHoldHold[vk] else g_tapHoldHoldCallbackId[vk];
 }
 
 inline fn effectiveTapHoldCleanupCallbackId(vk: usize) i32 {
@@ -17328,6 +18823,7 @@ fn rebuildActiveRuntimeModifiers() bool {
     var best_mask: [VK_COUNT]u8 = [_]u8{0} ** VK_COUNT;
     var i: usize = 0;
     while (i < g_runtimeModifiersLen) : (i += 1) {
+        if (runtimeModifierOverriddenByRuntime(i)) continue;
         if (!runtimeModifierAllows(i)) continue;
         const row = g_runtimeModifiers[i];
         if (row.vk <= 0 or row.vk >= VK_COUNT) continue;
@@ -17348,6 +18844,14 @@ fn rebuildActiveRuntimeContextActions() bool {
     const next: u32 = current ^ 1;
     const bank = &g_runtimeContextActionActiveBanks[next];
     bank.* = .{};
+    // These are callback-ID slots, not booleans.  Explicitly restore the
+    // runtime sentinel after clearing the bank so an unregistered key can
+    // never be mistaken for compiled callback slot 0 during key-gate rebuild.
+    @memset(&bank.hold, -1);
+    @memset(&bank.doubleTap, -1);
+    @memset(&bank.tapHoldTap, -1);
+    @memset(&bank.tapHoldHold, -1);
+    @memset(&bank.tapHoldCleanup, -1);
 
     var best_hold_mask: [VK_COUNT]u8 = [_]u8{0} ** VK_COUNT;
     var best_double_mask: [VK_COUNT]u8 = [_]u8{0} ** VK_COUNT;
@@ -17363,6 +18867,7 @@ fn rebuildActiveRuntimeContextActions() bool {
     var i: usize = 0;
     while (i < g_runtimeContextActionsLen) : (i += 1) {
         const action = g_runtimeContextActions[i];
+        if (runtimeContextActionOverriddenByRuntime(i)) continue;
         if (!runtimeContextActionAllows(i)) continue;
         const vk: usize = @intCast(action.triggerVK);
         switch (action.actionKind) {
@@ -17440,6 +18945,10 @@ fn applyActiveRuntimeCombo(bank: *RuntimeComboActiveBank, row: RuntimeCombo) voi
         },
         2 => {
             if (row.targetVK == 0) return;
+            // Compiled native remaps use the same runtime combo bank as
+            // SetupCombos, but they do not pass through setupInternalComboVK.
+            // Keep the common modifier/send path aware of them as well.
+            g_hasInternalCombos = true;
             bank.comboPrimary[p] = true;
             bank.comboMatrix[p][s] = true;
             bank.comboCallback[p][s] = -1;
@@ -17448,6 +18957,7 @@ fn applyActiveRuntimeCombo(bank: *RuntimeComboActiveBank, row: RuntimeCombo) voi
         },
         3 => {
             if (row.targetVK == 0) return;
+            g_hasInternalCombos = true;
             bank.instantPrimary[p] = true;
             bank.instantMatrix[p][s] = true;
             bank.instantCallback[p][s] = -1;
@@ -17487,11 +18997,22 @@ fn rebuildActiveRuntimeCombos() bool {
                 g_runtimeCombos[normal_i].registrationOrder < g_runtimeInstantCombos[instant_i].registrationOrder);
         const row = if (take_normal) g_runtimeCombos[normal_i] else g_runtimeInstantCombos[instant_i];
         const row_index = if (take_normal) normal_i else instant_i;
+        // Only the compiled preload prefix may be displaced.  A runtime row
+        // lives in the suffix being searched by runtimeComboOverriddenByRuntime;
+        // asking that helper about the runtime row itself makes it find itself
+        // and suppress the overlay (and, consequently, the compiled row too).
+        const is_compiled_preload = if (take_normal)
+            row_index < g_runtimeCombosPublishedLen
+        else
+            row_index < g_runtimeInstantCombosPublishedLen;
         const allowed = if (take_normal)
             runtimeComboAllows(row, runtimeComboText(row_index))
         else
             runtimeComboAllows(row, runtimeInstantComboText(row_index));
-        if (allowed) {
+        if (allowed and (!is_compiled_preload or !runtimeComboOverriddenByRuntime(row, if (take_normal)
+            runtimeComboText(row_index)
+        else
+            runtimeInstantComboText(row_index)))) {
             const p: usize = @intCast(row.primaryVK);
             const sec: usize = @intCast(row.secondaryVK);
             if (best_source[p][sec] == NO_COMBO_SOURCE or row.specificityMask > best_mask[p][sec]) {
@@ -17527,6 +19048,22 @@ fn rebuildActiveRuntimeCombos() bool {
 inline fn runtimeChordText(index: usize) []const u16 {
     const len: usize = @intCast(g_runtimeChords[index].contextLen);
     return g_runtimeChordTexts[index][0..len];
+}
+
+fn runtimeChordOverriddenByRuntime(index: usize) bool {
+    if (index >= g_runtimeChordsPublishedLen) return false;
+    const compiled = g_runtimeChords[index];
+    var runtime_index = g_runtimeChordsPublishedLen;
+    while (runtime_index < g_runtimeChordsLen) : (runtime_index += 1) {
+        const runtime = g_runtimeChords[runtime_index];
+        if (runtime.key != compiled.key or runtime.keyCount != compiled.keyCount or
+            runtime.mode != compiled.mode or
+            runtime.contextKind != compiled.contextKind or runtime.contextNegated != compiled.contextNegated) continue;
+        if (!std.mem.eql(i32, runtime.vks[0..@as(usize, @intCast(runtime.keyCount))],
+            compiled.vks[0..@as(usize, @intCast(compiled.keyCount))])) continue;
+        if (runtimeContextTextEqual(runtimeChordText(index), runtimeChordText(runtime_index))) return true;
+    }
+    return false;
 }
 
 inline fn runtimeChordAllows(index: usize) bool {
@@ -17586,7 +19123,7 @@ fn runtimeChordCacheExternal(bank: *RuntimeChordActiveBank, row: RuntimeChord) v
     while (i < @as(usize, @intCast(row.keyCount)) and i < row.vks.len) : (i += 1) {
         entry.vks[i] = row.vks[i];
         if (row.vks[i] >= 0 and row.vks[i] < VK_COUNT) {
-            mask |= @as(u16, @intCast(g_keyModMask[@intCast(row.vks[i])]));
+            mask |= @as(u16, @intCast(g_key_virtual_modifier_mask[@intCast(row.vks[i])]));
         }
     }
     entry.modMask = mask;
@@ -17602,7 +19139,10 @@ fn applyActiveRuntimeChord(bank: *RuntimeChordActiveBank, row: RuntimeChord) voi
         if (row.targetVK == 0) return;
         bank.hasInternal = true;
     } else {
-        if (row.callbackId < 0) return;
+        // Complete-compile AHK callbacks use the reserved negative compiled
+        // range.  They are still external chord actions and must remain in
+        // the active chord cache so the later IPC dispatch can reach AHK.
+        if (row.callbackId < 0 and !isCompiledZigCallbackId(row.callbackId)) return;
         bank.hasExternal = true;
         runtimeChordCacheExternal(bank, row);
     }
@@ -17646,6 +19186,7 @@ fn rebuildActiveRuntimeChords() bool {
 
     var i: usize = 0;
     while (i < g_runtimeChordsLen) : (i += 1) {
+        if (runtimeChordOverriddenByRuntime(i)) continue;
         if (!runtimeChordAllows(i)) continue;
         const row = g_runtimeChords[i];
         var identity: usize = 0;
@@ -17667,6 +19208,103 @@ fn rebuildActiveRuntimeChords() bool {
     }
     recomputeChordHotSupersetFlags(bank.hotTable);
     @atomicStore(u32, &g_activeRuntimeChordBank, next, .release);
+    return true;
+}
+
+// Compiled rows are a preload.  A source file may contain the same combo more
+// than once; that is harmless for the preload and must not invalidate the
+// other compiled families.  Keep runtime setup semantics unchanged.
+fn appendPrecompiledCombo(row: RuntimeCombo, context_text: []const u16) bool {
+    if (runtimeComboDuplicate(row, context_text)) return true;
+    return appendRuntimeCombo(row, context_text);
+}
+
+fn rebuildActiveRuntimePassthroughs() bool {
+    const current = @atomicLoad(u32, &g_activeRuntimePassthroughBank, .acquire);
+    const next: u32 = current ^ 1;
+    const bank = &g_runtimePassthroughActiveBanks[next];
+    bank.* = .{};
+    var best_seen: [VK_COUNT]bool = [_]bool{false} ** VK_COUNT;
+    var best_mask: [VK_COUNT]u8 = [_]u8{0} ** VK_COUNT;
+    var i: usize = 0;
+    while (i < g_runtimePassthroughsLen) : (i += 1) {
+        if (runtimePassthroughOverriddenByRuntime(i)) continue;
+        if (!runtimePassthroughAllows(i)) continue;
+        const row = g_runtimePassthroughs[i];
+        if (row.vk <= 0 or row.vk >= VK_COUNT or isModVK(row.vk)) continue;
+        const row_vk: usize = @intCast(row.vk);
+        if (!best_seen[row_vk] or row.specificityMask > best_mask[row_vk]) {
+            best_seen[row_vk] = true;
+            bank.enabled[row_vk] = true;
+            best_mask[row_vk] = row.specificityMask;
+        }
+    }
+    @atomicStore(u32, &g_activeRuntimePassthroughBank, next, .release);
+    return true;
+}
+
+fn ensureRuntimePassthroughCapacity(required: usize) bool {
+    if (required <= g_runtimePassthroughsCap) return true;
+    var new_cap: usize = if (g_runtimePassthroughsCap == 0) RUNTIME_PASSTHROUGH_INITIAL_CAP else g_runtimePassthroughsCap * 2;
+    while (new_cap < required) : (new_cap *= 2) {}
+    const new_rows = gAlloc.alloc(RuntimePassthrough, new_cap) catch return false;
+    const new_texts = gAlloc.alloc(RuntimeContextActionText, new_cap) catch {
+        gAlloc.free(new_rows);
+        return false;
+    };
+    if (g_runtimePassthroughsLen != 0) {
+        @memcpy(new_rows[0..g_runtimePassthroughsLen], g_runtimePassthroughs[0..g_runtimePassthroughsLen]);
+        @memcpy(new_texts[0..g_runtimePassthroughsLen], g_runtimePassthroughTexts[0..g_runtimePassthroughsLen]);
+    }
+    @memset(new_rows[g_runtimePassthroughsLen..new_cap], RuntimePassthrough{});
+    @memset(new_texts[g_runtimePassthroughsLen..new_cap], [_]u16{0} ** RUNTIME_CONTEXT_ACTION_CHARS);
+    const old_rows = g_runtimePassthroughs;
+    const old_texts = g_runtimePassthroughTexts;
+    g_runtimePassthroughs = new_rows;
+    g_runtimePassthroughTexts = new_texts;
+    g_runtimePassthroughsCap = new_cap;
+    retireSlice(RuntimePassthrough, old_rows);
+    retireSlice(RuntimeContextActionText, old_texts);
+    return true;
+}
+
+fn runtimePassthroughOverriddenByRuntime(index: usize) bool {
+    if (index >= g_runtimePassthroughsPublishedLen) return false;
+    const compiled = g_runtimePassthroughs[index];
+    var runtime_index = g_runtimePassthroughsPublishedLen;
+    while (runtime_index < g_runtimePassthroughsLen) : (runtime_index += 1) {
+        const runtime = g_runtimePassthroughs[runtime_index];
+        if (runtime.vk != compiled.vk or runtime.contextKind != compiled.contextKind or
+            runtime.contextNegated != compiled.contextNegated) continue;
+        if (runtimeContextTextEqual(g_runtimePassthroughTexts[index][0..@as(usize, @intCast(compiled.contextLen))],
+            g_runtimePassthroughTexts[runtime_index][0..@as(usize, @intCast(runtime.contextLen))])) return true;
+    }
+    return false;
+}
+
+fn appendRuntimePassthrough(vk: i32, context_kind: u8, context_negated: bool, context_text: []const u16, suspend_exempt: bool) bool {
+    if (vk <= 0 or vk >= VK_COUNT or isModVK(vk)) return false;
+    if (context_text.len >= RUNTIME_CONTEXT_ACTION_CHARS) return false;
+    if (!ensureRuntimePassthroughCapacity(g_runtimePassthroughsLen + 1)) return false;
+    var i: usize = 0;
+    while (i < g_runtimePassthroughsLen) : (i += 1) {
+        const row = g_runtimePassthroughs[i];
+        const len: usize = @intCast(row.contextLen);
+        if (row.vk == vk and row.contextKind == context_kind and row.contextNegated == context_negated and
+            row.suspendExempt == suspend_exempt and runtimeContextTextEqual(g_runtimePassthroughTexts[i][0..len], context_text)) return false;
+    }
+    const slot = g_runtimePassthroughsLen;
+    @memset(&g_runtimePassthroughTexts[slot], 0);
+    if (context_text.len != 0) @memcpy(g_runtimePassthroughTexts[slot][0..context_text.len], context_text);
+    g_runtimePassthroughs[slot] = .{
+        .vk = vk,
+        .contextKind = context_kind,
+        .contextNegated = context_negated,
+        .contextLen = @intCast(context_text.len),
+        .specificityMask = runtimeHotkeySpecificityMask(context_kind, g_runtimePassthroughTexts[slot][0..context_text.len]),
+        .suspendExempt = suspend_exempt,
+    };
+    g_runtimePassthroughsLen += 1;
     return true;
 }
 
@@ -17768,6 +19406,7 @@ fn rebuildRuntimeHotstringContexts() bool {
     i = 0;
     while (i < g_runtimeHotstringLen) : (i += 1) {
         if (!g_runtimeHotstringUserEnabled[i]) continue;
+        if (runtimeHotstringOverriddenByRuntime(i)) continue;
         if (suspended and !g_runtimeHotstringSuspendExempt[i]) continue;
         const rank = runtimeHotstringBestAllowedMask(i) orelse continue;
         const entry = g_runtimeHotstringEntries[i];
@@ -17811,6 +19450,8 @@ fn runtimeContextRefreshBlockedByUnpublishedSetup(changed_mask: u8) bool {
         g_bulkRuntimeContextActionsDirty) return true;
     if ((g_runtimeModifierDependencyMask & changed_mask) != 0 and
         g_bulkRuntimeModifiersDirty) return true;
+    if ((g_runtimePassthroughDependencyMask & changed_mask) != 0 and
+        g_bulkRuntimePassthroughsDirty) return true;
     if ((g_runtimeComboDependencyMask & changed_mask) != 0 and
         g_bulkRuntimeCombosDirty) return true;
     if ((g_runtimeChordDependencyMask & changed_mask) != 0 and
@@ -17821,23 +19462,8 @@ fn runtimeContextRefreshBlockedByUnpublishedSetup(changed_mask: u8) bool {
 }
 
 fn recalculateHotkeyContexts(changed_mask: u8) bool {
-    if (!g_hotkeyContextsParsed) {
-        initParsedHotkeyContexts();
-        return true;
-    }
     if (changed_mask == 0) return true;
     if (runtimeContextRefreshBlockedByUnpublishedSetup(changed_mask)) return false;
-
-    // Compiled shortcuts are not runtime user-API registrations; keep their
-    // existing context refresh together. Runtime APIs below are dirty-aware.
-    evaluateCompiledSubstringContexts();
-    for (hotkeys.HOTKEYS, 0..) |hk, idx| {
-        g_hotkeyContextsAllowed[idx] = if (hk.context_kind == .global)
-            true
-        else
-            evalHotkeyContextAllows(hk, idx);
-    }
-    rebuildCompiledContextReadyIndex();
 
     var rebuild_key_gate = false;
     if ((g_runtimeHotkeyDependencyMask & changed_mask) != 0) {
@@ -17849,6 +19475,10 @@ fn recalculateHotkeyContexts(changed_mask: u8) bool {
     }
     if ((g_runtimeModifierDependencyMask & changed_mask) != 0) {
         if (!rebuildActiveRuntimeModifiers()) return false;
+        rebuild_key_gate = true;
+    }
+    if ((g_runtimePassthroughDependencyMask & changed_mask) != 0) {
+        if (!rebuildActiveRuntimePassthroughs()) return false;
         rebuild_key_gate = true;
     }
     if ((g_runtimeComboDependencyMask & changed_mask) != 0) {
@@ -17959,6 +19589,7 @@ inline fn wideEquals(buf: []const u16, needle: []const u16) bool {
 // that exact pumped value or the basename of a pumped full executable path.
 // If the criterion itself contains a path separator, require the full path.
 inline fn runtimeExeMatches(buf: []const u16, criterion: []const u16) bool {
+    @setEvalBranchQuota(1_000_000);
     const current = wideSpan(buf);
     if (criterion.len == 0) return true;
     if (eqlIgnoreCase16(current, criterion)) return true;
@@ -18043,6 +19674,7 @@ var g_runtimeModifierDependencyMask: u8 = 0;
 var g_runtimeComboDependencyMask: u8 = 0;
 var g_runtimeChordDependencyMask: u8 = 0;
 var g_runtimeHotstringDependencyMask: u8 = 0;
+var g_runtimePassthroughDependencyMask: u8 = 0;
 
 const RuntimeContextSpec = struct {
     kind: u8 = RUNTIME_CONTEXT_GLOBAL_KIND,
@@ -18293,7 +19925,6 @@ inline fn runtimeHotkeyContextAllows(index: usize) bool {
 inline fn hotkeyContextAllows(hk: hotkeys.CompiledHotkey, entry_index: usize) bool {
     _ = hk;
     if (!g_hotkeyContextsParsed) {
-        initParsedHotkeyContexts();
     }
     return g_hotkeyContextsAllowed[entry_index];
 }
@@ -18334,6 +19965,7 @@ inline fn matchReadyHotkey(kind: ReadyHotkeyKind, vk: i32, active_mods: u16, is_
                 while (offset < range.len) : (offset += 1) {
                     const entry_index: usize = @intCast(index.source_indexes[range.start + offset]);
                     const hk = hotkeys.HOTKEYS[entry_index];
+                    if (shouldDeferBufferedOneLetterCompiledHotkey(hk, is_down)) continue;
                     if (hk.physical_mod_vk != 0 and !physicalKeyDownAt(hk.physical_mod_vk)) continue;
                     return @intCast(entry_index);
                 }
@@ -18354,6 +19986,7 @@ inline fn matchReadyHotkey(kind: ReadyHotkeyKind, vk: i32, active_mods: u16, is_
                     const entry_index: usize = @intCast(index.sourceIndexes[source_pos]);
                     const hk = g_runtimeHotkeys[entry_index];
                     if (hk.triggerKind != trigger_kind) continue;
+                    if (shouldDeferBufferedOneLetterRuntimeHotkey(hk, is_down)) continue;
                     if (shouldDeferRuntimeContextualTapHotkey(hk, is_down)) continue;
                     return @intCast(entry_index);
                 }
@@ -18363,26 +19996,20 @@ inline fn matchReadyHotkey(kind: ReadyHotkeyKind, vk: i32, active_mods: u16, is_
     return -1;
 }
 
-inline fn matchHotkeyFastPass(vk: i32, active_mods: u16, is_down: bool, global_pass: bool) i32 {
-    if (comptime !has_qmk_shortcuts_build) return -1;
-    if (vk < 0 or vk >= 256) return -1;
-    const hotkey_vk: usize = @intCast(vk);
-    const bucket = hotkeyModBucket(active_mods);
-    const bank_index = @atomicLoad(u32, &g_activeCompiledHotkeyReadyIndex, .acquire);
-    const ready_bank = &g_compiledHotkeyReadyBanks[bank_index];
-    const index = if (!global_pass)
-        (if (is_down) &ready_bank.keydown else &ready_bank.keyup)
-    else
-        (if (is_down) &hotkeys.GLOBAL_KEYDOWN_INDEX else &hotkeys.GLOBAL_KEYUP_INDEX);
-    const range = index.ranges[hotkey_vk][bucket];
-    var offset: u16 = 0;
-    while (offset < range.len) : (offset += 1) {
-        const entry_index: usize = @intCast(index.source_indexes[range.start + offset]);
-        const hk = hotkeys.HOTKEYS[entry_index];
-        if (hk.physical_mod_vk != 0 and !physicalKeyDownAt(hk.physical_mod_vk)) continue;
-        return @intCast(entry_index);
-    }
-    return -1;
+inline fn shouldDeferBufferedOneLetterRuntimeHotkey(hk: RuntimeHotkey, is_down: bool) bool {
+    if (!is_down) return false;
+    const sequence_active = g_kbLen != 0 or pendingSoloActive() or
+        pendingRollActive() or g_pendingChord.active;
+    return sequence_active and hk.modsRequired == 0 and hk.modsForbidden == 0 and
+        hk.physicalModVK == 0 and hk.physicalModsRequired == 0 and hk.physicalModsForbidden == 0;
+}
+
+inline fn shouldDeferBufferedOneLetterCompiledHotkey(hk: hotkeys.CompiledHotkey, is_down: bool) bool {
+    if (!is_down) return false;
+    const sequence_active = g_kbLen != 0 or pendingSoloActive() or
+        pendingRollActive() or g_pendingChord.active;
+    return sequence_active and hk.mods_required == 0 and hk.mods_forbidden == 0 and
+        hk.physical_mod_vk == 0;
 }
 
 inline fn shouldDeferRuntimeContextualTapHotkey(hk: RuntimeHotkey, is_down: bool) bool {
@@ -18393,13 +20020,190 @@ inline fn shouldDeferRuntimeContextualTapHotkey(hk: RuntimeHotkey, is_down: bool
     // would steal a chord, instant combo, or virtual-mod chain.
     return g_kbLen != 0 or
         g_unrelModCount != 0 or
-        g_activeModCount != 0 or
+        g_active_virtual_modifier_count != 0 or
         pendingSoloActive() or
         pendingRollActive() or
         g_pendingChord.active;
 }
 
+const StructuralHotkeyCandidates = struct {
+    count: u32 = 0,
+    has_contextual: bool = false,
+};
+
+inline fn refreshForegroundContextIfChanged() void {
+    if (compiled_shortcuts_test_observability and g_testSuppressForegroundRefresh) return;
+    // Menu state is sampled first because a #32768 popup can block the
+    // application's normal thread while the low-level input hook continues
+    // receiving keys.  The current key must see this state in the same
+    // synchronous context-bank rebuild as the foreground window metadata.
+    var changed = refreshContextMenuStateForInput();
+
+    const foreground = GetForegroundWindow() orelse {
+        if (changed == 0) return;
+        if (!recalculateHotkeyContexts(changed)) {
+            acquireSetupPublishLock();
+            g_pendingContextChangedMask |= changed;
+            requestRuntimePublish(RUNTIME_PUBLISH_CONTEXTS);
+            releaseSetupPublishLock();
+        }
+        return;
+    };
+    // AHK v2 evaluates WinGetTitle/WinGetClass/WinGetProcessName("A") at
+    // match time. The title can change while the HWND stays the same (Anki
+    // changes its document title this way), so this deliberately repolls the
+    // foreground window and its metadata on every eligible input event. There
+    // is no HWND/PID cache in this path. The affected context banks are rebuilt
+    // synchronously before the current key is matched.
+    const result = refreshForegroundContextFromHwndMode(foreground, false);
+    if (result.ok) changed |= result.changed;
+    if (changed == 0) return;
+
+    // This is the input-time path.  Do not hand the new context to the
+    // background publisher: the current key must see the rebuilt ready bank.
+    if (!recalculateHotkeyContexts(changed)) {
+        // Allocation/setup races are exceptional.  Preserve the change for
+        // the normal publisher so it can recover after this event.
+        acquireSetupPublishLock();
+        g_pendingContextChangedMask |= changed;
+        requestRuntimePublish(RUNTIME_PUBLISH_CONTEXTS);
+        releaseSetupPublishLock();
+    }
+}
+
+/// Finds hotkeys without consulting the context-ready banks. This is the
+/// recovery gate: a stale context publication must not make a real hotkey
+/// structurally disappear before the current foreground window is queried.
+fn findStructuralHotkeyCandidates(vk: i32, active_mods: u16, is_down: bool) StructuralHotkeyCandidates {
+    var result = StructuralHotkeyCandidates{};
+    if (vk < 0 or vk >= VK_COUNT) return result;
+    const trigger_kind: u8 = if (is_down) 0 else 1;
+
+    var i: usize = 0;
+    while (i < g_runtimeHotkeysLen) : (i += 1) {
+        const hk = g_runtimeHotkeys[i];
+        if (runtimeHotkeyOverriddenByRuntime(i)) continue;
+        if (hk.triggerVK != vk or hk.triggerKind != trigger_kind) continue;
+        if (runtimeHotkeyModifiersAllow(hk, active_mods) and runtimePhysicalModifiersAllow(hk)) {
+            result.count += 1;
+            result.has_contextual = result.has_contextual or hk.specificityMask != 0;
+        }
+    }
+
+    return result;
+}
+
+/// Performs the current-window check only after structural hotkey discovery.
+/// Context is refreshed synchronously at candidate time; external publishers
+/// own website updates.
+fn prepareStructuralHotkeyContext(vk: i32, active_mods: u16, is_down: bool) bool {
+    const candidates = findStructuralHotkeyCandidates(vk, active_mods, is_down);
+    if (candidates.count == 0) return false;
+    if (!candidates.has_contextual) return true;
+
+    refreshForegroundContextIfChanged();
+    return true;
+}
+
+fn prepareStructuralContextAction(vk: i32) void {
+    if (vk < 0 or vk >= VK_COUNT or !g_runtimeContextActionGate[@intCast(vk)]) return;
+    var i: usize = 0;
+    while (i < g_runtimeContextActionsLen) : (i += 1) {
+        const action = g_runtimeContextActions[i];
+        if (action.triggerVK == vk and action.specificityMask != 0) {
+            refreshForegroundContextIfChanged();
+            return;
+        }
+    }
+}
+
+/// Chords own their context path. Inspect only registered contextual chord
+/// rows which contain the incoming key and one currently held member; this
+/// avoids treating a chord continuation as a one-letter hotkey event.
+fn prepareStructuralIncomingChordContext(vk: i32) void {
+    if (vk < 0 or vk >= VK_COUNT or g_kbLen == 0 or
+        !g_runtimeChordContextParticipant[@intCast(vk)]) return;
+    var i: usize = 0;
+    while (i < g_runtimeChordsLen) : (i += 1) {
+        const row = g_runtimeChords[i];
+        if (row.specificityMask == 0) continue;
+        var contains_incoming = false;
+        var contains_held = false;
+        for (row.vks[0..@as(usize, @intCast(row.keyCount))]) |member| {
+            if (member == vk) contains_incoming = true;
+            if (member != vk) {
+                if (kbGet(member)) |kd| {
+                    if (!kd.isReleased()) contains_held = true;
+                }
+            }
+        }
+        if (contains_incoming and contains_held) {
+            refreshForegroundContextIfChanged();
+            return;
+        }
+    }
+}
+
+fn prepareStructuralComboContext(primary: i32, secondary: i32) void {
+    var i: usize = 0;
+    while (i < g_runtimeCombosLen) : (i += 1) {
+        const row = g_runtimeCombos[i];
+        if (row.primaryVK == primary and row.secondaryVK == secondary and row.specificityMask != 0) {
+            refreshForegroundContextIfChanged();
+            return;
+        }
+    }
+    i = 0;
+    while (i < g_runtimeInstantCombosLen) : (i += 1) {
+        const row = g_runtimeInstantCombos[i];
+        if (row.primaryVK == primary and row.secondaryVK == secondary and row.specificityMask != 0) {
+            refreshForegroundContextIfChanged();
+            return;
+        }
+    }
+}
+
+fn prepareStructuralChordContext(key: u64) void {
+    var i: usize = 0;
+    while (i < g_runtimeChordsLen) : (i += 1) {
+        const row = g_runtimeChords[i];
+        if (row.key == key and row.specificityMask != 0) {
+            refreshForegroundContextIfChanged();
+            return;
+        }
+    }
+}
+
+fn prepareStructuralHotstringContext() void {
+    const history = g_hotstringMatcher.view();
+    var i: usize = 0;
+    while (i < g_runtimeHotstringLen) : (i += 1) {
+        if (g_runtimeHotstringCtxCount[i] == 0) continue;
+        const trigger = g_runtimeHotstringEntries[i].trigger;
+        if (trigger.len == 0 or trigger.len > history.len) continue;
+        const start = history.len - trigger.len;
+        var matches = true;
+        for (trigger, 0..) |raw, j| {
+            const actual = history[start + j];
+            if (g_runtimeHotstringEntries[i].options.case_sensitive) {
+                if (actual != raw) {
+                    matches = false;
+                    break;
+                }
+            } else if (asciiFoldLower8(actual) != asciiFoldLower8(raw)) {
+                matches = false;
+                break;
+            }
+        }
+        if (matches) {
+            refreshForegroundContextIfChanged();
+            return;
+        }
+    }
+}
+
 inline fn matchRuntimeHotkeyPass(vk: i32, active_mods: u16, is_down: bool, global_pass: bool) i32 {
+    @setEvalBranchQuota(1_000_000);
     if (vk < 0 or vk >= VK_COUNT) return -1;
     const hotkey_vk: usize = @intCast(vk);
     const bucket = hotkeyModBucket(active_mods);
@@ -18417,9 +20221,26 @@ inline fn matchRuntimeHotkeyPass(vk: i32, active_mods: u16, is_down: bool, globa
         const hk = g_runtimeHotkeys[entry_index];
         if (@atomicLoad(i32, &g_runtimeHotkeysSuspended, .acquire) != 0 and !hk.suspendExempt) continue;
         if (hk.triggerKind != trigger_kind) continue;
+        if (shouldDeferBufferedOneLetterRuntimeHotkey(hk, is_down)) continue;
         if (shouldDeferRuntimeContextualTapHotkey(hk, is_down)) continue;
         if (!runtimePhysicalModifiersAllow(hk)) continue;
         return @intCast(entry_index);
+    }
+    // Compiled rows are runtime rows. If an index publication handoff leaves
+    // this bucket stale, recover from the authoritative row store instead of
+    // making a valid callback hotkey disappear.
+    var i: usize = 0;
+    while (i < g_runtimeHotkeysLen) : (i += 1) {
+        const hk = g_runtimeHotkeys[i];
+        if (runtimeHotkeyOverriddenByRuntime(i)) continue;
+        if (hk.triggerVK != vk or hk.triggerKind != trigger_kind) continue;
+        if ((global_pass and hk.specificityMask != 0) or (!global_pass and hk.specificityMask == 0)) continue;
+        if (@atomicLoad(i32, &g_runtimeHotkeysSuspended, .acquire) != 0 and !hk.suspendExempt) continue;
+        if (!runtimeHotkeyModifiersAllow(hk, active_mods) or !runtimePhysicalModifiersAllow(hk)) continue;
+        if (!global_pass and !runtimeHotkeyContextAllows(i)) continue;
+        if (shouldDeferBufferedOneLetterRuntimeHotkey(hk, is_down)) continue;
+        if (shouldDeferRuntimeContextualTapHotkey(hk, is_down)) continue;
+        return @intCast(i);
     }
     return -1;
 }
@@ -18445,16 +20266,35 @@ inline fn matchRuntimeContextualTapHotkeyPass(vk: i32, active_mods: u16, global_
         if (!runtimePhysicalModifiersAllow(hk)) continue;
         return @intCast(entry_index);
     }
+    // The runtime rows are authoritative.  If a publish/index handoff has
+    // left this bucket temporarily stale, do not make a valid compiled or
+    // runtime tap disappear; recover by checking the same row predicates
+    // directly.  The normal indexed path remains the fast path.
+    var i: usize = 0;
+    while (i < g_runtimeHotkeysLen) : (i += 1) {
+        const hk = g_runtimeHotkeys[i];
+        if (runtimeHotkeyOverriddenByRuntime(i)) continue;
+        if (hk.triggerVK != vk or hk.triggerKind != 0 or hk.actionKind != 1) continue;
+        if ((global_pass and hk.specificityMask != 0) or (!global_pass and hk.specificityMask == 0)) continue;
+        if (!runtimeHotkeyModifiersAllow(hk, active_mods) or !runtimePhysicalModifiersAllow(hk)) continue;
+        if (!global_pass and !runtimeHotkeyContextAllows(i)) continue;
+        if (shouldDeferRuntimeContextualTapHotkey(hk, true)) continue;
+        return @intCast(i);
+    }
     return -1;
 }
 
 inline fn dispatchContextualTapAction(callback_id: i32) void {
     if (nativeHotkeyPayloadOffset(callback_id)) |ptr| {
         if (parseSendDirectSpecText16(wideZSpan(ptr))) |parsed| {
-            sendKeyDirect(parsed.vk, parsed.mods);
-            return;
+            sendDirectSpec(parsed);
+        } else {
+            // Match the authoritative runtime hotkey path: ordinary native
+            // text payloads use the paste worker; only SendKeyDirect-shaped
+            // payloads stay on the direct-key path.  Dropping this branch made
+            // compiled taps (for example Anki h/j/k/l) silently no-op.
+            enqueueNativePaste(9, callback_id);
         }
-        _ = @atomicRmw(u32, &g_nativePasteFailed, .Add, 1, .monotonic);
         return;
     }
     if (callback_id <= NATIVE_PAYLOAD_ID_BASE) {
@@ -18466,7 +20306,9 @@ inline fn dispatchContextualTapAction(callback_id: i32) void {
 }
 
 inline fn contextualTapCallbackIdValid(callback_id: i32) bool {
-    return callback_id >= 0 or callback_id <= NATIVE_PAYLOAD_ID_BASE;
+    // Accept ordinary runtime IDs, native payload IDs, and the separate
+    // reserved range used by complete-compile AHK callbacks.
+    return callback_id >= 0 or callback_id <= NATIVE_PAYLOAD_ID_BASE or isCompiledZigCallbackId(callback_id);
 }
 
 inline fn contextualTapHoldFallbackCallbackId(vk: usize, explicit_hold_callback_id: i32) i32 {
@@ -18518,6 +20360,7 @@ inline fn resolveContextualTap(vk: i32) void {
 }
 
 inline fn tryArmRuntimeContextualTapHotkey(vk: i32, active_mods: u16) bool {
+    @setEvalBranchQuota(1_000_000);
     if (vk < 0 or vk >= VK_COUNT) return false;
     const vki: usize = @intCast(vk);
     var index = matchRuntimeContextualTapHotkeyPass(vk, active_mods, false);
@@ -18526,7 +20369,7 @@ inline fn tryArmRuntimeContextualTapHotkey(vk: i32, active_mods: u16) bool {
     queueRuntimeHotkeyIndex(index, true);
     const suppress = runtimeHotkeySuppressesOriginal(index);
     if (suppress) releasePhysicalModsForSuppressingHotkey();
-    g_hotkeyConsumedDown[vki] = suppress;
+    g_hotkey_consumed_down[vki] = suppress;
     return suppress;
 }
 
@@ -18540,19 +20383,8 @@ inline fn queueRuntimeHotkeyIndex(index: i32, is_down: bool) void {
     notifyAHK(true, false);
 }
 
-inline fn queueCompiledHotkeyIndex(index: i32) void {
-    queueRuntimeCallback(index, 8);
-    notifyAHK(true, false);
-}
-
 inline fn runtimeHotkeySuppressesOriginal(index: i32) bool {
     return g_runtimeHotkeys[@intCast(index)].suppressOriginal;
-}
-
-inline fn compiledHotkeySuppressesOriginal(index: i32) bool {
-    if (comptime !has_qmk_shortcuts_build) return false;
-    const hk = hotkeys.HOTKEYS[@intCast(index)];
-    return runtimeHotkeyDefaultSuppressOriginal(hk.trigger_vk, hk.mods_required, hk.physical_mod_vk, hk.suppress_original);
 }
 
 inline fn hotkeyGateContains(vk: i32) bool {
@@ -18565,6 +20397,53 @@ inline fn hotkeyGateContains(vk: i32) bool {
     return (g_hotkeyActiveGateBanks[bank][u >> 6] & (@as(u64, 1) << @intCast(u & 63))) != 0;
 }
 
+inline fn keyHasRegisteredHotkey(vk: i32) bool {
+    if (vk < 0 or vk >= VK_COUNT) return false;
+    const idx: usize = @intCast(vk);
+    // The permanent runtime gate covers rows registered in any context;
+    // the published gate covers currently active compiled/context rows.
+    return g_runtimeHotkeyGate[idx] or hotkeyGateContains(vk);
+}
+
+/// Cheap registration gate for events that need current window context before
+/// matching. Global rows do not cause WinGetTitle/WinGetClass/
+/// WinGetProcessName work on every key event.
+inline fn keyHasContextSensitiveRegistration(vk: i32) bool {
+    if (vk < 0 or vk >= VK_COUNT) return false;
+    const idx: usize = @intCast(vk);
+    if (g_runtimeContextHotkeyGate[idx] or g_runtimeContextActionGate[idx]) return true;
+    return false;
+}
+
+inline fn prepareStructuralModifierContext(vk: i32, is_down: bool) void {
+    if (!is_down or vk < 0 or vk >= VK_COUNT or
+        !g_runtimeContextModifierGate[@intCast(vk)]) return;
+    refreshForegroundContextIfChanged();
+}
+
+/// Context discovery is allowed for chord keys. Only standalone contextual
+/// tap arming below is restricted to the first key in a sequence.
+inline fn shouldPrepareStructuralHotkeyContext(vk: i32, is_down: bool) bool {
+    return is_down and g_kbLen == 0 and keyHasContextSensitiveRegistration(vk);
+}
+
+/// The native contextual tap descriptor is a standalone one-key remap. It
+/// must not pre-empt a chord once any other physical key is down, even though
+/// the chord itself remains outside this one-letter hotkey gate.  A key can be
+/// pending in the solo/roll fast path without being materialized in kb[], so
+/// g_kbLen alone is not sufficient here.  Returning false is intentional: the
+/// caller then sends this event through processKeyEventHot/bufferKeyDown so the
+/// chord engine can consume it as the next member.
+inline fn shouldArmRuntimeContextualTapHotkey(vk: i32, is_down: bool) bool {
+    return is_down and !keySequenceActive() and keyHasRegisteredHotkey(vk);
+}
+
+inline fn keySequenceActive() bool {
+    // g_kbLen does not include keys parked in the solo/roll fast path yet.
+    return g_kbLen != 0 or pendingSoloActive() or pendingRollActive() or
+        g_pendingChord.active;
+}
+
 fn publishCombinedHotkeyGate() void {
     const current = @atomicLoad(u32, &g_activeHotkeyGateBank, .acquire);
     const next = current ^ 1;
@@ -18572,25 +20451,11 @@ fn publishCombinedHotkeyGate() void {
     bits.* = [_]u64{0} ** 4;
     const runtime_bank = @atomicLoad(u32, &g_activeRuntimeHotkeyReadyIndex, .acquire);
     const global_bank = @atomicLoad(u32, &g_activeRuntimeGlobalHotkeyIndex, .acquire);
-    const compiled_bank = @atomicLoad(u32, &g_activeCompiledHotkeyReadyIndex, .acquire);
     var vk: usize = 0;
     while (vk < 256) : (vk += 1) {
         const runtime_active = g_runtimeHotkeyReadyIndexes[runtime_bank].activeGate[vk] or
             g_runtimeGlobalHotkeyIndexes[global_bank].activeGate[vk];
-        var compiled_global = false;
-        if (comptime has_qmk_shortcuts_build) {
-            var bucket: usize = 0;
-            while (bucket < 16) : (bucket += 1) {
-                if (hotkeys.GLOBAL_KEYDOWN_INDEX.ranges[vk][bucket].len != 0 or hotkeys.GLOBAL_KEYUP_INDEX.ranges[vk][bucket].len != 0) {
-                    compiled_global = true;
-                    break;
-                }
-            }
-        }
-        const compiled_active = if (comptime has_qmk_shortcuts_build)
-            g_compiledHotkeyReadyBanks[compiled_bank].active_gate[vk] or compiled_global
-        else false;
-        if (runtime_active or compiled_active) bits[vk >> 6] |= @as(u64, 1) << @intCast(vk & 63);
+        if (runtime_active) bits[vk >> 6] |= @as(u64, 1) << @intCast(vk & 63);
     }
     @atomicStore(u32, &g_activeHotkeyGateBank, next, .release);
 }
@@ -18598,10 +20463,11 @@ fn publishCombinedHotkeyGate() void {
 // Resolution is contextual before global. Matching queues the callback, but
 // only suppress-original rows own the physical key's down/up pair.
 inline fn queueAnyHotkeyIfMatched(vk: i32, active_mods: u16, is_down: bool) bool {
+    @setEvalBranchQuota(1_000_000);
     if (vk < 0 or vk >= VK_COUNT) return false;
+    if (shouldPrepareStructuralHotkeyContext(vk, is_down) and
+        !prepareStructuralHotkeyContext(vk, active_mods, is_down)) return false;
     const vki: usize = @intCast(vk);
-    const suspended = @atomicLoad(i32, &g_runtimeHotkeysSuspended, .acquire) != 0;
-
     if (!is_down) {
         resolveContextualTap(vk);
         var matched_up_suppressed = false;
@@ -18610,13 +20476,6 @@ inline fn queueAnyHotkeyIfMatched(vk: i32, active_mods: u16, is_down: bool) bool
             queueRuntimeHotkeyIndex(index, false);
             matched_up_suppressed = runtimeHotkeySuppressesOriginal(index);
         }
-        if (!suspended and index < 0) {
-            index = matchHotkeyFastPass(vk, active_mods, false, false);
-            if (index >= 0) {
-                queueCompiledHotkeyIndex(index);
-                matched_up_suppressed = compiledHotkeySuppressesOriginal(index);
-            }
-        }
         if (index < 0) {
             index = matchRuntimeHotkeyPass(vk, active_mods, false, true);
             if (index >= 0) {
@@ -18624,15 +20483,8 @@ inline fn queueAnyHotkeyIfMatched(vk: i32, active_mods: u16, is_down: bool) bool
                 matched_up_suppressed = runtimeHotkeySuppressesOriginal(index);
             }
         }
-        if (!suspended and index < 0) {
-            index = matchHotkeyFastPass(vk, active_mods, false, true);
-            if (index >= 0) {
-                queueCompiledHotkeyIndex(index);
-                matched_up_suppressed = compiledHotkeySuppressesOriginal(index);
-            }
-        }
-        const consumed_down = g_hotkeyConsumedDown[vki];
-        g_hotkeyConsumedDown[vki] = false;
+        const consumed_down = g_hotkey_consumed_down[vki];
+        g_hotkey_consumed_down[vki] = false;
         return matched_up_suppressed or consumed_down;
     }
 
@@ -18641,31 +20493,15 @@ inline fn queueAnyHotkeyIfMatched(vk: i32, active_mods: u16, is_down: bool) bool
         queueRuntimeHotkeyIndex(index, true);
         const suppress = runtimeHotkeySuppressesOriginal(index);
         if (suppress) releasePhysicalModsForSuppressingHotkey();
-        g_hotkeyConsumedDown[vki] = suppress;
-        return suppress;
-    }
-    index = if (!suspended) matchHotkeyFastPass(vk, active_mods, true, false) else -1;
-    if (index >= 0) {
-        queueCompiledHotkeyIndex(index);
-        const suppress = compiledHotkeySuppressesOriginal(index);
-        if (suppress) releasePhysicalModsForSuppressingHotkey();
-        g_hotkeyConsumedDown[vki] = suppress;
+        g_hotkey_consumed_down[vki] = suppress;
         return suppress;
     }
     index = matchRuntimeHotkeyPass(vk, active_mods, true, true);
     if (index >= 0) {
         queueRuntimeHotkeyIndex(index, true);
-        const suppress = runtimeHotkeySuppressesOriginal(index);
+                const suppress = runtimeHotkeySuppressesOriginal(index);
         if (suppress) releasePhysicalModsForSuppressingHotkey();
-        g_hotkeyConsumedDown[vki] = suppress;
-        return suppress;
-    }
-    index = if (!suspended) matchHotkeyFastPass(vk, active_mods, true, true) else -1;
-    if (index >= 0) {
-        queueCompiledHotkeyIndex(index);
-        const suppress = compiledHotkeySuppressesOriginal(index);
-        if (suppress) releasePhysicalModsForSuppressingHotkey();
-        g_hotkeyConsumedDown[vki] = suppress;
+        g_hotkey_consumed_down[vki] = suppress;
         return suppress;
     }
     return false;
@@ -18716,16 +20552,12 @@ inline fn matchReversePhysicalModHotkey(mod_vk: i32, active_mods: u16) i32 {
 }
 
 inline fn queueReversePhysicalModHotkeyIfMatched(mod_vk: i32, active_mods: u16) bool {
-    if (comptime !has_qmk_shortcuts_build) {
-        return false;
-    }
-    const hotkey_index = matchReversePhysicalModHotkey(mod_vk, active_mods);
-    if (hotkey_index < 0) return false;
-    queueRuntimeCallback(hotkey_index, 8);
-    notifyAHK(true, false);
-    const suppress = compiledHotkeySuppressesOriginal(hotkey_index);
-    if (suppress) releasePhysicalModsForSuppressingHotkey();
-    return suppress;
+    // Compiled rows are inserted into the same runtime hotkey store.  This
+    // legacy generated-table path is intentionally disabled so it cannot
+    // compete with the runtime matcher.
+    _ = mod_vk;
+    _ = active_mods;
+    return false;
 }
 
 inline fn msToTicksInt(ms: i32) i64 {
@@ -18760,7 +20592,9 @@ inline fn genericTapHoldConfigured(vk: i32) bool {
     const idx: usize = @intCast(vk);
     // A key armed by an earlier key-down keeps its release routed here even if a
     // context change cleared its callbacks in between, otherwise it stays armed forever.
-    return g_tapHoldArmed[idx] or effectiveTapHoldTapCallbackId(idx) >= 0 or effectiveTapHoldHoldCallbackId(idx) >= 0;
+    return g_tapHoldArmed[idx] or
+        contextualTapCallbackIdValid(effectiveTapHoldTapCallbackId(idx)) or
+        contextualTapCallbackIdValid(effectiveTapHoldHoldCallbackId(idx));
 }
 
 inline fn queueGenericTapHoldCallback(vk: i32, callback_id: i32) void {
@@ -18787,7 +20621,7 @@ fn handleGenericTapHold(vk: i32, is_down: bool) bool {
         g_tapHoldArmedCleanupCallbackId[idx] = effectiveTapHoldCleanupCallbackId(idx);
         g_tapHoldArmedThreshold[idx] = effectiveTapHoldThresholdTicks(idx);
         g_tapHoldArmed[idx] = true;
-        g_tapHoldInterrupted[idx] = computeHotkeyModBitmask() != 0 or anyOtherPhysicalKeyDown(vk);
+        g_tapHoldInterrupted[idx] = compute_modifiers_to_send() != 0 or anyOtherPhysicalKeyDown(vk);
         return true;
     }
 
@@ -18863,14 +20697,14 @@ fn cleanupBufferedKeyAfterConsumedKeyUp(vk: i32) void {
     const kd = &g_kbData[idx];
     cancelKeyTimers(vk);
     if (kd.modifierActivated()) {
-        const modVK = g_keyModVK[@intCast(vk)];
+        const modVK = g_virtual_modifier_output_vk[@intCast(vk)];
         if (modVK != 0) {
             ringReset();
             ringAddKey(modVK, KEYEVENTF_KEYUP);
             ringSend();
         }
     }
-    activeModRemove(vk);
+    remove_active_virtual_modifier(vk);
     markKeyReleased(vk, kd);
     kd.releaseTime = getTime();
     activePrimaryBitsSync(vk, kd.*);
@@ -18878,6 +20712,20 @@ fn cleanupBufferedKeyAfterConsumedKeyUp(vk: i32) void {
     _ = kbRemove(vk);
     removeFromKeyOrder(vk);
     rebuildUnreleasedModifierCounters();
+}
+
+// A tap/hold participant must remain on the structural buffer path. The
+// generic tap/hold fast handler predates combo participation and returns from
+// QMK_ProcessKeyEvent before bufferKeyDown can observe the prefix/secondary.
+// The structural path still resolves the same tap/hold callbacks on a solo
+// release; yielding here only lets combo/chord precedence be decided first.
+inline fn genericTapHoldMustYieldToCombo(vk: i32) bool {
+    if (vk <= 0 or vk >= VK_COUNT) return false;
+    const props = activeContextDerived().gate[@intCast(vk)].props;
+    return (props & (KP_CAN_BE_COMBO_PRIMARY |
+        KP_CAN_BE_INSTANT_COMBO_PRIMARY |
+        KP_CAN_BE_COMBO_SECONDARY |
+        KP_CAN_BE_INSTANT_COMBO_SECONDARY)) != 0;
 }
 
 export fn QMK_ProcessKeyEvent(vk: i32, isDown: i32) callconv(.c) void {
@@ -18889,14 +20737,15 @@ export fn QMK_ProcessKeyEvent(vk: i32, isDown: i32) callconv(.c) void {
     if (isModVK(vk)) {
         const incoming_tracked_vk = physicalModifierTrackingVK(vk);
         const hidden_up = !is_down and physicalModifierHiddenFromOs(incoming_tracked_vk);
-        const tracked_vk = applyPhysicalModifierEvent(vk, is_down);
+        const tracked_vk = apply_physical_modifier_event(vk, is_down);
         if (is_down) cancelRepeatForDifferentKeyDown(tracked_vk);
         if (!is_down) cancelRepeatForRequiredKeyUp(tracked_vk);
         if (is_down) markPhysicalModifierHiddenFromOs(tracked_vk);
         markGenericTapHoldInterrupted(tracked_vk, is_down);
-        const modMask = computeHotkeyModBitmask();
+        const modMask = compute_modifiers_to_send();
         handleNativePanicExitIfMatched(tracked_vk, modMask, is_down);
         handleNativeReloadIfMatched(tracked_vk, modMask, is_down);
+        if (handleNativeSuspendIfMatched(tracked_vk, modMask, is_down)) return;
         var consumed = false;
         if (@atomicLoad(i32, &g_runtimeHotkeysSuspended, .acquire) != 0) {
             consumed = queueAnyHotkeyIfMatchedWithGenericModFallback(tracked_vk, modMask, is_down);
@@ -18909,7 +20758,7 @@ export fn QMK_ProcessKeyEvent(vk: i32, isDown: i32) callconv(.c) void {
         if (consumed and !is_down) cleanupBufferedKeyAfterConsumedKeyUp(tracked_vk);
 
         if (is_down) {
-            if (consumed or !g_physicalModifierPassthrough) {
+            if (consumed or !g_physical_modifier_passthrough) {
                 markPhysicalModifierHiddenFromOs(tracked_vk);
             } else {
                 clearPhysicalModifierHiddenFromOs(tracked_vk);
@@ -18918,19 +20767,22 @@ export fn QMK_ProcessKeyEvent(vk: i32, isDown: i32) callconv(.c) void {
             clearPhysicalModifierHiddenFromOs(tracked_vk);
         }
 
-        if (consumed or hidden_up or !g_physicalModifierPassthrough) {
+        if (consumed or hidden_up or !g_physical_modifier_passthrough) {
             return;
         }
         processKeyEventHot(tracked_vk, isDown);
         return;
     }
+    prepareStructuralModifierContext(vk, is_down);
     setPhysicalKeyDownState(vk, is_down);
     markGenericTapHoldInterrupted(vk, is_down);
-    const qmk_mod_mask = computeHotkeyModBitmask();
+    const qmk_mod_mask = compute_modifiers_to_send();
     handleNativePanicExitIfMatched(vk, qmk_mod_mask, is_down);
     handleNativeReloadIfMatched(vk, qmk_mod_mask, is_down);
+    if (handleNativeSuspendIfMatched(vk, qmk_mod_mask, is_down)) return;
     if (@atomicLoad(i32, &g_runtimeHotkeysSuspended, .acquire) != 0) {
-        if (queueAnyHotkeyIfMatched(vk, qmk_mod_mask, is_down) and !is_down) cleanupBufferedKeyAfterConsumedKeyUp(vk);
+        const consumed = queueAnyHotkeyIfMatched(vk, qmk_mod_mask, is_down);
+        if (consumed and !is_down) cleanupBufferedKeyAfterConsumedKeyUp(vk);
         return;
     }
 
@@ -18942,17 +20794,27 @@ export fn QMK_ProcessKeyEvent(vk: i32, isDown: i32) callconv(.c) void {
     // callback or remain armed after a suppressing chord such as Ctrl+CapsLock.
     const tap_hold_owns_release = !is_down and vk > 0 and vk < VK_COUNT and
         g_tapHoldArmed[@intCast(vk)];
-    if (is_down and genericTapHoldConfigured(vk) and qmk_mod_mask == 0 and
+    const contextual_tap_owns_release = !is_down and vk > 0 and vk < VK_COUNT and
+        g_contextualTapArmed[@intCast(vk)];
+    // Contextual tap-hotkey arming can return before queueAnyHotkeyIfMatched,
+    // so perform structural discovery before that early-return path too.
+    if (shouldPrepareStructuralHotkeyContext(vk, is_down))
+        _ = prepareStructuralHotkeyContext(vk, qmk_mod_mask, is_down);
+    prepareStructuralContextAction(vk);
+    if (shouldArmRuntimeContextualTapHotkey(vk, is_down) and qmk_mod_mask == 0 and
         tryArmRuntimeContextualTapHotkey(vk, qmk_mod_mask))
     {
         return;
     }
-    if (genericTapHoldConfigured(vk) and (qmk_mod_mask == 0 or tap_hold_owns_release)) {
+    if (genericTapHoldConfigured(vk) and !genericTapHoldMustYieldToCombo(vk) and !contextual_tap_owns_release and
+        (!is_down or !keySequenceActive()) and
+        (qmk_mod_mask == 0 or tap_hold_owns_release)) {
         if (handleGenericTapHold(vk, is_down)) return;
     }
 
     // Four-word active gate avoids all row work for keys with no active hotkey.
     if (queueAnyHotkeyIfMatched(vk, qmk_mod_mask, is_down)) {
+        if (is_down) hotstringRecordConsumedKeyDown(vk);
         if (!is_down) cleanupBufferedKeyAfterConsumedKeyUp(vk);
         return;
     }
@@ -18968,14 +20830,40 @@ inline fn contextMenuChanged(has_context_menu: i32) bool {
     return g_hotkeyContextState.has_context_menu != next;
 }
 
-fn setContextMenuStateNative(has_context_menu: i32) void {
+/// Updates the menu bit and optionally queues it for the background publisher.
+/// Input-time callers use queue_publish=false so the current key can rebuild
+/// the ready context bank before matching.  A pending external update is
+/// consumed in that mode; otherwise an AHK-published menu state could remain
+/// invisible to the current key until the publisher wakes up.
+fn updateContextMenuStateNative(has_context_menu: i32, queue_publish: bool) u8 {
     acquireSetupPublishLock();
     defer releaseSetupPublishLock();
-    if (!contextMenuChanged(has_context_menu)) return;
-    g_hotkeyContextState.has_context_menu = if (has_context_menu != 0) 1 else 0;
-    _ = @atomicRmw(u32, &g_hotkeyContextState.generation, .Add, 1, .acq_rel);
-    g_pendingContextChangedMask |= RUNTIME_CONTEXT_MENU_BIT;
-    requestRuntimePublish(RUNTIME_PUBLISH_CONTEXTS);
+    const changed = contextMenuChanged(has_context_menu);
+    const pending = (g_pendingContextChangedMask & RUNTIME_CONTEXT_MENU_BIT) != 0;
+    if (changed) {
+        g_hotkeyContextState.has_context_menu = if (has_context_menu != 0) 1 else 0;
+        _ = @atomicRmw(u32, &g_hotkeyContextState.generation, .Add, 1, .acq_rel);
+    }
+    if (queue_publish) {
+        if (!changed) return 0;
+        g_pendingContextChangedMask |= RUNTIME_CONTEXT_MENU_BIT;
+        requestRuntimePublish(RUNTIME_PUBLISH_CONTEXTS);
+        return RUNTIME_CONTEXT_MENU_BIT;
+    }
+    if (pending) g_pendingContextChangedMask &= ~RUNTIME_CONTEXT_MENU_BIT;
+    return if (changed or pending) RUNTIME_CONTEXT_MENU_BIT else 0;
+}
+
+/// Performs a live Win32 lookup. FindWindowW checks the current desktop's
+/// top-level windows and returns a handle only while a matching #32768 menu
+/// window exists; it does not consult a cached QMK state value.
+inline fn refreshContextMenuStateForInput() u8 {
+    const has_context_menu = FindWindowW(CONTEXT_MENU_CLASS[0..:0].ptr, null) != null;
+    return updateContextMenuStateNative(if (has_context_menu) 1 else 0, false);
+}
+
+fn setContextMenuStateNative(has_context_menu: i32) void {
+    _ = updateContextMenuStateNative(has_context_menu, true);
 }
 
 fn isContextMenuWindow(hwnd: ?HANDLE) bool {
@@ -18992,180 +20880,15 @@ fn rootWindowFromEventHwnd(hwnd: ?HANDLE) ?HANDLE {
     return GetAncestor(raw, GA_ROOT) orelse raw;
 }
 
-fn eventHwndMatchesForeground(hwnd: ?HANDLE) bool {
-    const event_root = rootWindowFromEventHwnd(hwnd) orelse return false;
-    const foreground_root = rootWindowFromEventHwnd(null) orelse return false;
-    return @intFromPtr(event_root) == @intFromPtr(foreground_root);
-}
-
-fn nativeForegroundWinEventProc(_: HANDLE, event: DWORD, hwnd: HANDLE, idObject: i32, _: i32, _: DWORD, _: DWORD) callconv(.winapi) void {
-    const event_hwnd: ?HANDLE = if (@intFromPtr(hwnd) == 0) null else hwnd;
-    if (event == EVENT_SYSTEM_FOREGROUND) {
-        _ = refreshForegroundContextFromHwnd(event_hwnd);
-    } else if (event == EVENT_SYSTEM_MENUPOPUPSTART) {
-        setContextMenuStateNative(1);
-    } else if (event == EVENT_SYSTEM_MENUPOPUPEND) {
-        setContextMenuStateNative(0);
-    } else if (event == EVENT_OBJECT_SHOW) {
-        if (isContextMenuWindow(event_hwnd)) setContextMenuStateNative(1);
-    } else if (event == EVENT_OBJECT_HIDE) {
-        if (isContextMenuWindow(event_hwnd)) setContextMenuStateNative(0);
-    } else if (event == EVENT_OBJECT_FOCUS) {
-        if (idObject != OBJID_WINDOW) return;
-        const focus_root = rootWindowFromEventHwnd(event_hwnd) orelse return;
-        const focus_hwnd = @intFromPtr(focus_root);
-        if (focus_hwnd == g_nativeForegroundLastFocusHwnd and focus_hwnd == g_nativeForegroundHwnd) return;
-        g_nativeForegroundLastFocusHwnd = focus_hwnd;
-        _ = refreshForegroundContextFromHwnd(focus_root);
-    } else if (event == EVENT_OBJECT_NAMECHANGE and idObject == OBJID_WINDOW) {
-        if (eventHwndMatchesForeground(event_hwnd)) {
-            _ = refreshForegroundContextFromHwnd(event_hwnd);
-        }
-    }
-}
-
-fn nativeForegroundHookThreadProc(_: ?*anyopaque) callconv(.winapi) u32 {
-    g_nativeForegroundHookThreadId = GetCurrentThreadId();
-    const start_gen = @atomicLoad(i32, &g_nativeForegroundHookStopGeneration, .acquire);
-    var bootstrap_msg: MSG = undefined;
-    _ = PeekMessageW(&bootstrap_msg, null, 0, 0, PM_NOREMOVE);
-
-    const foreground_hook = SetWinEventHook(
-        EVENT_SYSTEM_FOREGROUND,
-        EVENT_SYSTEM_FOREGROUND,
-        null,
-        nativeForegroundWinEventProc,
-        0,
-        0,
-        WINEVENT_OUTOFCONTEXT,
-    ) orelse {
-        g_nativeForegroundHookThreadId = 0;
-        @atomicStore(i32, &g_nativeForegroundHookThreadActive, 0, .release);
-        return 0;
-    };
-    const focus_hook = SetWinEventHook(
-        EVENT_OBJECT_FOCUS,
-        EVENT_OBJECT_FOCUS,
-        null,
-        nativeForegroundWinEventProc,
-        0,
-        0,
-        WINEVENT_OUTOFCONTEXT,
-    );
-    const name_change_hook = SetWinEventHook(
-        EVENT_OBJECT_NAMECHANGE,
-        EVENT_OBJECT_NAMECHANGE,
-        null,
-        nativeForegroundWinEventProc,
-        0,
-        0,
-        WINEVENT_OUTOFCONTEXT,
-    );
-    const context_menu_popup_hook = SetWinEventHook(
-        EVENT_SYSTEM_MENUPOPUPSTART,
-        EVENT_SYSTEM_MENUPOPUPEND,
-        null,
-        nativeForegroundWinEventProc,
-        0,
-        0,
-        WINEVENT_OUTOFCONTEXT,
-    );
-    const context_menu_object_hook = SetWinEventHook(
-        EVENT_OBJECT_SHOW,
-        EVENT_OBJECT_HIDE,
-        null,
-        nativeForegroundWinEventProc,
-        0,
-        0,
-        WINEVENT_OUTOFCONTEXT,
-    );
-    g_nativeForegroundHook = foreground_hook;
-    g_nativeForegroundFocusHook = focus_hook;
-    g_nativeForegroundNameChangeHook = name_change_hook;
-    g_nativeContextMenuPopupHook = context_menu_popup_hook;
-    g_nativeContextMenuObjectHook = context_menu_object_hook;
-    _ = QMK_RefreshForegroundContext();
-    _ = QMK_RefreshContextMenuState();
-
-    var msg: MSG = undefined;
-    while (@atomicLoad(i32, &g_nativeForegroundHookStopGeneration, .acquire) == start_gen and
-        @atomicLoad(i32, &g_nativeForegroundContextFallbackActive, .acquire) != 0)
-    {
-        const got = GetMessageW(&msg, null, 0, 0);
-        if (got <= 0) break;
-        _ = TranslateMessage(&msg);
-        _ = DispatchMessageW(&msg);
-    }
-
-    _ = UnhookWinEvent(foreground_hook);
-    if (name_change_hook) |hh| {
-        _ = UnhookWinEvent(hh);
-    }
-    if (focus_hook) |hh| {
-        _ = UnhookWinEvent(hh);
-    }
-    if (context_menu_popup_hook) |hh| {
-        _ = UnhookWinEvent(hh);
-    }
-    if (context_menu_object_hook) |hh| {
-        _ = UnhookWinEvent(hh);
-    }
-    g_nativeForegroundHook = null;
-    g_nativeForegroundFocusHook = null;
-    g_nativeForegroundNameChangeHook = null;
-    g_nativeContextMenuPopupHook = null;
-    g_nativeContextMenuObjectHook = null;
-    g_nativeForegroundHookThreadId = 0;
-    @atomicStore(i32, &g_nativeForegroundHookThreadActive, 0, .release);
-    return 0;
-}
-
-export fn QMK_StartNativeForegroundContextHook() callconv(.c) i32 {
-    if (@atomicLoad(i32, &g_nativeForegroundContextFallbackActive, .acquire) == 0) return 0;
-    if (@atomicRmw(i32, &g_nativeForegroundHookThreadActive, .Xchg, 1, .acq_rel) != 0) return 1;
-    if (CreateThread(null, 0, nativeForegroundHookThreadProc, null, 0, null)) |hThread| {
-        _ = CloseHandle(hThread);
-        return 1;
-    }
-    @atomicStore(i32, &g_nativeForegroundHookThreadActive, 0, .release);
-    return 0;
-}
-
-fn stopNativeForegroundContextHook() bool {
-    @atomicStore(i32, &g_nativeForegroundContextFallbackActive, 0, .release);
-    _ = @atomicRmw(i32, &g_nativeForegroundHookStopGeneration, .Add, 1, .acq_rel);
-    const tid = g_nativeForegroundHookThreadId;
-    if (tid != 0) {
-        _ = PostThreadMessageW(tid, WM_QUIT, 0, 0);
-    }
-    var spin: u32 = 0;
-    while (@atomicLoad(i32, &g_nativeForegroundHookThreadActive, .acquire) != 0 and spin < 200) : (spin += 1) {
-        Sleep(1);
-    }
-    return @atomicLoad(i32, &g_nativeForegroundHookThreadActive, .acquire) == 0;
-}
-
-fn signalNativeForegroundContextHookNoWait() void {
-    @atomicStore(i32, &g_nativeForegroundContextFallbackActive, 0, .release);
-    _ = @atomicRmw(i32, &g_nativeForegroundHookStopGeneration, .Add, 1, .acq_rel);
-    const tid = g_nativeForegroundHookThreadId;
-    if (tid != 0) {
-        _ = PostThreadMessageW(tid, WM_QUIT, 0, 0);
-    }
-}
-
-export fn QMK_StopNativeForegroundContextHook() callconv(.c) void {
-    _ = stopNativeForegroundContextHook();
-}
-
-export fn QMK_SetWebsiteContext(url: [*:0]const u16, has_context_menu: i32) callconv(.c) void {
+/// Website context is owned by the external OnWebsite publisher. Native
+/// foreground refreshes never clear or rewrite this field; the publisher
+/// explicitly sends the URL or an empty string when it becomes invalid.
+export fn QMK_SetWebsiteContext(url: [*:0]const u16) callconv(.c) void {
     acquireSetupPublishLock();
     defer releaseSetupPublishLock();
     var changed: u8 = 0;
     if (contextFieldChanged(&g_hotkeyContextState.url, url)) changed |= RUNTIME_CONTEXT_WEBSITE_BIT | RUNTIME_CONTEXT_BROWSER_BIT;
-    if (contextMenuChanged(has_context_menu)) changed |= RUNTIME_CONTEXT_MENU_BIT;
     copyWideZToSlice(&g_hotkeyContextState.url, url);
-    g_hotkeyContextState.has_context_menu = if (has_context_menu != 0) 1 else 0;
     if (changed == 0) return;
     _ = @atomicRmw(u32, &g_hotkeyContextState.generation, .Add, 1, .acq_rel);
     g_pendingContextChangedMask |= changed;
@@ -19175,7 +20898,10 @@ export fn QMK_SetWebsiteContext(url: [*:0]const u16, has_context_menu: i32) call
 export fn QMK_SetWebsiteContextGuarded(url: [*:0]const u16, expected_exe: [*:0]const u16, expected_class: [*:0]const u16, expected_hwnd: usize, has_context_menu: i32) callconv(.c) i32 {
     acquireSetupPublishLock();
     defer releaseSetupPublishLock();
-    if (expected_hwnd != 0 and g_nativeForegroundHwnd != 0 and expected_hwnd != g_nativeForegroundHwnd) return 0;
+    if (expected_hwnd != 0) {
+        const current_hwnd = rootWindowFromEventHwnd(null) orelse return 0;
+        if (expected_hwnd != @intFromPtr(current_hwnd)) return 0;
+    }
     if (wideZSpan(expected_exe).len != 0 and contextFieldChanged(&g_hotkeyContextState.win_exe, expected_exe)) return 0;
     if (wideZSpan(expected_class).len != 0 and contextFieldChanged(&g_hotkeyContextState.win_class, expected_class)) return 0;
 
@@ -19249,10 +20975,13 @@ export fn QMK_SetContextStateFullV2(title: [*:0]const u16, exe: [*:0]const u16, 
 
 const PROCESS_QUERY_LIMITED_INFORMATION: DWORD = 0x1000;
 
-fn refreshForegroundContextFromHwnd(candidate_hwnd: ?HANDLE) i32 {
-    if (@atomicLoad(i32, &g_nativeForegroundContextFallbackActive, .acquire) == 0) return 0;
-    const hwnd = rootWindowFromEventHwnd(candidate_hwnd) orelse return 0;
-    const hwnd_value = @intFromPtr(hwnd);
+const ForegroundContextRefreshResult = struct {
+    ok: bool = false,
+    changed: u8 = 0,
+};
+
+fn refreshForegroundContextFromHwndMode(candidate_hwnd: ?HANDLE, queue_publish: bool) ForegroundContextRefreshResult {
+    const hwnd = rootWindowFromEventHwnd(candidate_hwnd) orelse return .{};
     var title: [512:0]u16 = [_:0]u16{0} ** 512;
     var class_name: [256:0]u16 = [_:0]u16{0} ** 256;
     var exe: [256:0]u16 = [_:0]u16{0} ** 256;
@@ -19263,9 +20992,9 @@ fn refreshForegroundContextFromHwnd(candidate_hwnd: ?HANDLE) i32 {
     var pid: DWORD = 0;
     _ = GetWindowThreadProcessId(hwnd, &pid);
     if (pid != 0) {
-        if (OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid)) |proc| {
+        if (OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid)) |proc| {
             var size: DWORD = @intCast(exe.len);
-            if (QueryFullProcessImageNameW(proc, 0, &exe, &size) == 0) {
+            if (QueryFullProcessImageNameW(proc, 0, &exe, &size) == FALSE) {
                 exe[0] = 0;
             } else if (size < exe.len) {
                 exe[@intCast(size)] = 0;
@@ -19277,9 +21006,6 @@ fn refreshForegroundContextFromHwnd(candidate_hwnd: ?HANDLE) i32 {
     }
 
     acquireSetupPublishLock();
-    defer releaseSetupPublishLock();
-    if (@atomicLoad(i32, &g_nativeForegroundContextFallbackActive, .acquire) == 0) return 0;
-    g_nativeForegroundHwnd = hwnd_value;
     var changed: u8 = 0;
     if (contextFieldChanged(&g_hotkeyContextState.win_title, &title)) changed |= RUNTIME_CONTEXT_TITLE_BIT;
     if (contextFieldChanged(&g_hotkeyContextState.win_exe, &exe)) changed |= RUNTIME_CONTEXT_EXE_BIT | RUNTIME_CONTEXT_BROWSER_BIT;
@@ -19287,16 +21013,20 @@ fn refreshForegroundContextFromHwnd(candidate_hwnd: ?HANDLE) i32 {
     copyWideZToSlice(&g_hotkeyContextState.win_title, &title);
     copyWideZToSlice(&g_hotkeyContextState.win_exe, &exe);
     copyWideZToSlice(&g_hotkeyContextState.win_class, &class_name);
-    if (changed != 0 and wideSpan(&g_hotkeyContextState.url).len != 0) {
-        @memset(&g_hotkeyContextState.url, 0);
-        changed |= RUNTIME_CONTEXT_WEBSITE_BIT | RUNTIME_CONTEXT_BROWSER_BIT;
-    }
     if (changed != 0) {
         _ = @atomicRmw(u32, &g_hotkeyContextState.generation, .Add, 1, .acq_rel);
-        g_pendingContextChangedMask |= changed;
-        requestRuntimePublish(RUNTIME_PUBLISH_CONTEXTS);
+        if (queue_publish) {
+            g_pendingContextChangedMask |= changed;
+            requestRuntimePublish(RUNTIME_PUBLISH_CONTEXTS);
+        }
     }
-    return 1;
+    releaseSetupPublishLock();
+    return .{ .ok = true, .changed = changed };
+}
+
+fn refreshForegroundContextFromHwnd(candidate_hwnd: ?HANDLE) i32 {
+    const result = refreshForegroundContextFromHwndMode(candidate_hwnd, true);
+    return if (result.ok) 1 else 0;
 }
 
 export fn QMK_RefreshForegroundContext() callconv(.c) i32 {
@@ -19306,6 +21036,13 @@ export fn QMK_RefreshForegroundContext() callconv(.c) i32 {
 export fn QMK_RefreshForegroundContextForHwnd(hwnd_value: usize) callconv(.c) i32 {
     const hwnd: ?HANDLE = if (hwnd_value == 0) null else @ptrFromInt(hwnd_value);
     return refreshForegroundContextFromHwnd(hwnd);
+}
+
+/// Test-only switch for the guarded Zig suite.  Normal builds cannot alter
+/// foreground refresh behavior because this flag is compiled out at use sites.
+export fn QMK_TestSetForegroundRefreshSuppressed(enabled: i32) callconv(.c) void {
+    if (!compiled_shortcuts_test_observability) return;
+    g_testSuppressForegroundRefresh = enabled != 0;
 }
 
 export fn QMK_RefreshContextMenuState() callconv(.c) i32 {
@@ -19355,23 +21092,23 @@ fn clearWarmHotPathStateOnly() void {
     pendingRollClear();
     kbClear();
     ordClear();
-    activeModClear();
+    clear_active_virtual_modifiers();
     timerClear();
     kdtClear();
     kutClear();
     pcbClear();
-    g_modBitmask = 0;
-    g_physicalModMask = 0;
-    g_physicalModMaskActive = false;
+    g_active_physical_and_windows_facing_modifiers = 0;
+    g_active_physical_modifiers = 0;
+    g_any_physical_modifiers_active = false;
     clearPhysicalKeyDownState();
     @memset(&g_foreignPhysicalKeyDown, false);
     g_foreignPhysicalQuarantineArmed = false;
     g_trackedPhysicalKeysDown = 0;
     g_lastPhysicalDownVK = 0;
-    g_physicalHotkeyModMask = 0;
-    g_physicalHotkeyLRModMask = 0;
-    @memset(&g_physicalHotkeyModCounts, 0);
-    @memset(&g_hotkeyConsumedDown, false);
+    g_which_physical_modifiers_to_send = 0;
+    g_lr_active_physical_modifiers = 0;
+    @memset(&g_active_physical_modifier_key_counts_by_category, 0);
+    @memset(&g_hotkey_consumed_down, false);
     g_lastKeyTime = 0;
     g_typingMode = false;
     g_typingModeUntil = 0;
@@ -19530,13 +21267,13 @@ export fn QMK_ClearPendingTimers() callconv(.c) void {
     ptmClear();
 }
 export fn QMK_GetModifierBitmask() callconv(.c) i32 {
-    return g_modBitmask;
+    return g_active_physical_and_windows_facing_modifiers;
 }
 export fn QMK_GetActiveModifierCount() callconv(.c) i32 {
-    return g_activeModCount;
+    return g_active_virtual_modifier_count;
 }
 export fn QMK_GetActiveModifierMask() callconv(.c) i32 {
-    return @intCast(g_activeModMask);
+    return @intCast(g_active_virtual_modifiers);
 }
 export fn QMK_GetPhysicalHiddenModifierMask() callconv(.c) i32 {
     return @intCast(hiddenPhysicalModsFromOs());
@@ -19551,7 +21288,7 @@ export fn QMK_GetRepeatEmitCount() callconv(.c) u64 {
     return @atomicLoad(u64, &g_repeatEmitCount, .monotonic);
 }
 export fn QMK_CheckHotkey() callconv(.c) bool {
-    return g_physicalModMaskActive;
+    return g_any_physical_modifiers_active;
 }
 export fn QMK_IsRepeatActive() callconv(.c) i32 {
     return if (repeatIsActive()) 1 else 0;
@@ -19560,7 +21297,7 @@ export fn QMK_IsDirectSendEnabled() callconv(.c) bool {
     return true;
 }
 export fn QMK_AnyPhysicalModifier() callconv(.c) bool {
-    return g_physicalModMaskActive;
+    return g_any_physical_modifiers_active;
 }
 export fn QMK_IsPhysicalKeyDown(vk: i32) callconv(.c) bool {
     if (vk < 0 or vk >= VK_COUNT) return false;
@@ -19744,7 +21481,7 @@ export fn QMK_PhysModDown(mask: i32) callconv(.c) void {
     beginHotPathActivity();
     defer endHotPathActivity(true);
     if (isModVK(mask)) {
-        _ = applyPhysicalModifierEvent(mask, true);
+        _ = apply_physical_modifier_event(mask, true);
         return;
     }
     const uMask: u16 = @intCast(@as(u32, @bitCast(mask)) & 0xFFFF);
@@ -19752,13 +21489,13 @@ export fn QMK_PhysModDown(mask: i32) callconv(.c) void {
     const fallback_masks = [_]u16{ 0x01, 0x02, 0x04, 0x08 };
     for (fallback_vks, fallback_masks) |vk, bit| {
         if ((uMask & bit) == 0) continue;
-        _ = applyPhysicalModifierEvent(vk, true);
+        _ = apply_physical_modifier_event(vk, true);
     }
 }
 export fn QMK_PhysModDownVK(vk: i32) callconv(.c) void {
     beginHotPathActivity();
     defer endHotPathActivity(true);
-    _ = applyPhysicalModifierEvent(vk, true);
+    _ = apply_physical_modifier_event(vk, true);
 }
 fn recordPhysicalModifierUpForDoubleTap(vk: i32) void {
     if (vk < 0 or vk >= VK_COUNT) return;
@@ -19786,7 +21523,7 @@ export fn QMK_PhysModUp(mask: i32) callconv(.c) void {
     beginHotPathActivity();
     defer endHotPathActivity(false);
     if (isModVK(mask)) {
-        _ = applyPhysicalModifierEvent(mask, false);
+        _ = apply_physical_modifier_event(mask, false);
         return;
     }
     const raw: u16 = @intCast(@as(u32, @bitCast(mask)) & 0xFFFF);
@@ -19795,31 +21532,29 @@ export fn QMK_PhysModUp(mask: i32) callconv(.c) void {
     const fallback_masks = [_]u16{ 0x01, 0x02, 0x04, 0x08 };
     for (fallback_vks, fallback_masks) |vk, bit| {
         if ((uMask & bit) == 0) continue;
-        _ = applyPhysicalModifierEvent(vk, false);
+        _ = apply_physical_modifier_event(vk, false);
     }
 }
 export fn QMK_PhysModUpVK(vk: i32) callconv(.c) void {
     beginHotPathActivity();
     defer endHotPathActivity(false);
-    _ = applyPhysicalModifierEvent(vk, false);
+    _ = apply_physical_modifier_event(vk, false);
 }
 export fn QMK_NoModifiersHeld() callconv(.c) bool {
-    if (g_activeModCount > 0 or g_unrelModCount > 0) return false;
+    if (g_active_virtual_modifier_count > 0 or g_unrelModCount > 0) return false;
     for (0..g_kbLen) |i| {
         const vk = g_kbVK[i];
         const props = if (vk >= 0 and vk < VK_COUNT) activeContextDerived().gate[@intCast(vk)].props else 0;
-        if (!g_kbData[i].isReleased() and (props & (KP_IS_COMBO_PRIMARY | KP_IS_INSTANT_PRIMARY)) != 0)
+        if (!g_kbData[i].isReleased() and (props & (KP_CAN_BE_COMBO_PRIMARY | KP_CAN_BE_INSTANT_COMBO_PRIMARY)) != 0)
             return false;
     }
     return true;
 }
 export fn QMK_HasCombo(primary: i32, secondary: i32) callconv(.c) bool {
-    if (primary < 0 or primary >= VK_COUNT or secondary < 0 or secondary >= VK_COUNT) return false;
-    return g_comboMatrix[@intCast(primary)][@intCast(secondary)];
+    return hasCombo(primary, secondary);
 }
 export fn QMK_HasInstantCombo(primary: i32, secondary: i32) callconv(.c) bool {
-    if (primary < 0 or primary >= VK_COUNT or secondary < 0 or secondary >= VK_COUNT) return false;
-    return g_instantComboMatrix[@intCast(primary)][@intCast(secondary)];
+    return hasInstantCombo(primary, secondary);
 }
 export fn QMK_ProcessCallbacksDirect() callconv(.c) i32 {
     acquirePendingCBLock();
@@ -19842,7 +21577,13 @@ export fn QMK_ProcessCallbacksDirect() callconv(.c) i32 {
 const SendDirectSpec = struct {
     vk: i32,
     mods: u16,
+    repeat_count: u16 = 1,
 };
+
+inline fn sendDirectSpec(spec: SendDirectSpec) void {
+    var i: u16 = 0;
+    while (i < spec.repeat_count) : (i += 1) sendKeyDirect(spec.vk, spec.mods);
+}
 
 fn parseSendDirectSpecText16(raw_spec: []const u16) ?SendDirectSpec {
     var text = trimSpaces16(raw_spec);
@@ -19861,15 +21602,27 @@ fn parseSendDirectSpecText16(raw_spec: []const u16) ?SendDirectSpec {
     if (text.len == 0) return null;
 
     var key_text: []const u16 = text;
+    var repeat_count: u16 = 1;
     if (text[0] == '{') {
         var close: usize = 1;
         while (close < text.len and text[close] != '}') : (close += 1) {}
         if (close >= text.len) return null;
         var end: usize = 1;
         while (end < close and !isSpaceOrTab16(text[end])) : (end += 1) {}
-        if (end != close) return null;
-        if (trimSpaces16(text[close + 1 ..]).len != 0) return null;
         key_text = text[1..end];
+        if (end != close) {
+            const count_text = trimSpaces16(text[end..close]);
+            if (count_text.len == 0) return null;
+            var count: u32 = 0;
+            for (count_text) |digit| {
+                if (digit < '0' or digit > '9') return null;
+                count = count * 10 + @as(u32, digit - '0');
+                if (count > 0xFFFF) return null;
+            }
+            if (count == 0) return null;
+            repeat_count = @intCast(count);
+        }
+        if (trimSpaces16(text[close + 1 ..]).len != 0) return null;
     } else if (text.len == 1) {
         if (text[0] >= 'A' and text[0] <= 'Z') {
             const lower_buf = [_]u16{asciiLower16(text[0])};
@@ -19881,12 +21634,12 @@ fn parseSendDirectSpecText16(raw_spec: []const u16) ?SendDirectSpec {
 
     const vk = getVKFromText16(key_text);
     if (vk == 0) return null;
-    return .{ .vk = vk, .mods = mods };
+    return .{ .vk = vk, .mods = mods, .repeat_count = repeat_count };
 }
 
 export fn QMK_SendDirectEntry(sendSpec: [*:0]const u16) callconv(.c) i32 {
     const parsed = parseSendDirectSpecText16(wideZSpan(sendSpec)) orelse return 0;
-    sendKeyDirect(parsed.vk, parsed.mods);
+    sendDirectSpec(parsed);
     return 1;
 }
 
@@ -20321,10 +22074,10 @@ export fn QMK_ViewSettings() callconv(.c) void {
     aInt(&buf8, &pos, @intCast(g_llHookLastMods));
     aStr(&buf8, &pos, "  (Ctrl=1 Alt=2 Shift=4 Win=8)\n");
     aStr(&buf8, &pos, "currentPhysicalMods:     ");
-    aInt(&buf8, &pos, @intCast(computeHotkeyModBitmask()));
+    aInt(&buf8, &pos, @intCast(compute_modifiers_to_send()));
     aStr(&buf8, &pos, "  (Ctrl=1 Alt=2 Shift=4 Win=8)\n");
     aStr(&buf8, &pos, "physicalLRMods:          ");
-    aInt(&buf8, &pos, @intCast(g_physicalHotkeyLRModMask));
+    aInt(&buf8, &pos, @intCast(g_lr_active_physical_modifiers));
     aStr(&buf8, &pos, "  (LC=1 RC=2 LA=4 RA=8 LS=16 RS=32 LW=64 RW=128)\n");
     aStr(&buf8, &pos, "ipcControlDropCount:     ");
     aInt(&buf8, &pos, @intCast(@min(g_ipcControlDropCount, @as(u64, 2147483647))));
@@ -20382,7 +22135,7 @@ export fn QMK_ViewSettings() callconv(.c) void {
 
     aStr(&buf8, &pos, "\n-- Runtime State --\n");
     aStr(&buf8, &pos, "activeModCount:          ");
-    aInt(&buf8, &pos, g_activeModCount);
+    aInt(&buf8, &pos, g_active_virtual_modifier_count);
     aStr(&buf8, &pos, "\n");
     aStr(&buf8, &pos, "unrelModCount:           ");
     aInt(&buf8, &pos, g_unrelModCount);
@@ -20440,7 +22193,6 @@ fn signalNativeInputShutdownNoWait() void {
 }
 
 export fn QMK_ShutdownNativeInput() callconv(.c) void {
-    const native_context_stopped = stopNativeForegroundContextHook();
     const mod_poll_stopped = stopModPollThread();
     signalNativeInputShutdownNoWait();
     const ll_hook_stopped = stopLLHookCapture();
@@ -20449,7 +22201,7 @@ export fn QMK_ShutdownNativeInput() callconv(.c) void {
     const native_paste_stopped = stopNativePasteThread();
     stopRepeatWorker();
     stopSchedThread();
-    if (native_context_stopped and mod_poll_stopped and ll_hook_stopped and interception_stopped and native_paste_stopped)
+    if (mod_poll_stopped and ll_hook_stopped and interception_stopped and native_paste_stopped)
         freeRetiredAllocationsNow();
 }
 
@@ -20461,9 +22213,7 @@ export fn DllMain(hinst: windows.HINSTANCE, reason: u32, _: ?*anyopaque) callcon
         // g_is_initialized guard that prevents double-init.
         lockDllMemory(hinst);
         initTimer();
-        initParsedHotkeyContexts();
     } else if (reason == 0) { // DLL_PROCESS_DETACH
-        signalNativeForegroundContextHookNoWait();
         signalNativeInputShutdownNoWait();
     }
     return TRUE;
@@ -20471,7 +22221,6 @@ export fn DllMain(hinst: windows.HINSTANCE, reason: u32, _: ?*anyopaque) callcon
 
 export fn QMK_ResetForTest() callconv(.c) void {
     initTimer();
-    const native_context_stopped = stopNativeForegroundContextHook();
     const mod_poll_stopped = stopModPollThread();
     const ll_hook_stopped = stopLLHookCapture();
     const interception_stopped = stopInterceptionCaptureOnly(false);
@@ -20479,7 +22228,7 @@ export fn QMK_ResetForTest() callconv(.c) void {
     stopRepeatWorker();
     stopSchedThread();
     const native_paste_stopped = stopNativePasteThread();
-    const reset_safe = native_context_stopped and mod_poll_stopped and ll_hook_stopped and interception_stopped and native_paste_stopped;
+    const reset_safe = mod_poll_stopped and ll_hook_stopped and interception_stopped and native_paste_stopped;
     if (!reset_safe) {
         ensureAsyncSendWorker();
         initRepeatWorker();
@@ -20500,17 +22249,7 @@ export fn QMK_ResetForTest() callconv(.c) void {
     clearRuntimePublishStateForReset();
     g_is_initialized = false;
     g_userConfigApplied = false;
-    @atomicStore(i32, &g_nativeForegroundContextFallbackActive, 1, .release);
-    if (native_context_stopped) {
-        g_nativeForegroundHook = null;
-        g_nativeForegroundFocusHook = null;
-        g_nativeForegroundNameChangeHook = null;
-        g_nativeContextMenuPopupHook = null;
-        g_nativeContextMenuObjectHook = null;
-        g_nativeForegroundHookThreadActive = 0;
-        g_nativeForegroundHookThreadId = 0;
-        g_nativeForegroundHwnd = 0;
-    }
+    @memset(&g_compiledCallbackBindings, -1);
     kbClear();
     ordClear();
     @memset(&g_kbIdx, -1);
@@ -20550,31 +22289,31 @@ export fn QMK_ResetForTest() callconv(.c) void {
     ptmClear();
     kdtClear();
     kutClear();
-    activeModClear();
+    clear_active_virtual_modifiers();
     for (&g_keyNames) |*n| @memset(n, 0);
     @memset(&g_vkToRegIdx, -1);
     @memset(&g_scPacked, 0);
 
     g_keyCount = 0;
-    g_modBitmask = 0;
-    g_physicalModMask = 0;
-    g_physicalModMaskActive = false;
+    g_active_physical_and_windows_facing_modifiers = 0;
+    g_active_physical_modifiers = 0;
+    g_any_physical_modifiers_active = false;
     clearPhysicalKeyDownState();
     @memset(&g_foreignPhysicalKeyDown, false);
     g_foreignPhysicalQuarantineArmed = false;
     g_trackedPhysicalKeysDown = 0;
     g_lastPhysicalDownVK = 0;
-    g_physicalHotkeyModMask = 0;
-    g_physicalHotkeyLRModMask = 0;
-    @memset(&g_physicalHotkeyModCounts, 0);
-    @memset(&g_hotkeyConsumedDown, false);
+    g_which_physical_modifiers_to_send = 0;
+    g_lr_active_physical_modifiers = 0;
+    @memset(&g_active_physical_modifier_key_counts_by_category, 0);
+    @memset(&g_hotkey_consumed_down, false);
     @memset(&g_contextualTapArmed, false);
     @memset(&g_contextualTapCallbackId, -1);
     @memset(&g_contextualTapHoldCallbackId, -1);
     @memset(&g_contextualTapCleanupCallbackId, -1);
     @memset(&g_contextualTapThreshold, 0);
     @memset(&g_contextualTapDownTime, 0);
-    @memset(&g_nativePassthroughDown, false);
+    @memset(&g_native_passthrough_to_windows, false);
     if (mod_poll_stopped) {
         g_modPollActive = 0;
         g_modPollGeneration = 0;
@@ -20650,7 +22389,7 @@ export fn QMK_ResetForTest() callconv(.c) void {
     g_activeAnyPrimaryBits = .{ 0, 0, 0, 0 };
     @memset(&g_chordParticipantFlat, false);
     registerDefaultKeys();
-    rebuildKeyGate();
+    rebuild_runtime_vk_plan();
     g_keyGateDirty = false;
     armForeignPhysicalKeyQuarantine();
     warmHotTables();
@@ -20664,7 +22403,7 @@ export fn QMK_ResetForReplayBench() callconv(.c) void {
     QMK_ResetForTest();
     @atomicStore(u64, &g_repeatEmitCount, 0, .monotonic);
     applyPrecompiledShortcuts();
-    rebuildKeyGate();
+    rebuild_runtime_vk_plan();
     g_keyGateDirty = false;
     warmHotTables();
     g_profilingEnabled = true;
@@ -20678,6 +22417,7 @@ export fn QMK_GetBuildFlagsForArcBench() callconv(.c) u32 {
     if (comptime compile_with_pgo) flags |= 1 << 2;
     if (comptime has_qmk_shortcuts_build) flags |= 1 << 3;
     if (comptime has_qmk_hotstrings_build) flags |= 1 << 6;
+    if (comptime has_compiled_user_shortcuts_build) flags |= 1 << 7;
     if (g_profilingEnabled) flags |= 1 << 4;
     if (g_suppressOutputForReplay) flags |= 1 << 5;
     return flags;
@@ -20685,6 +22425,17 @@ export fn QMK_GetBuildFlagsForArcBench() callconv(.c) u32 {
 
 export fn QMK_GetBuildFeatureFlags() callconv(.c) u32 {
     return QMK_GetBuildFlagsForArcBench();
+}
+
+/// Diagnostic identity for the compiled user-shortcut bridge.
+/// This is intentionally independent of the test-observability build flag so
+/// AHK can verify which shortcut table was compiled into the loaded DLL.
+export fn QMK_GetCompiledAhkCallbackCount() callconv(.c) u32 {
+    if (comptime has_compiled_user_shortcuts_build and
+        @hasDecl(compiled_user_shortcuts, "Compiled_Callbacks") and
+        @hasDecl(compiled_user_shortcuts.Compiled_Callbacks, "ahk"))
+        return @intCast(compiled_user_shortcuts.Compiled_Callbacks.ahk.len);
+    return 0;
 }
 
 export fn QMK_DebugKeyNameCaseFoldOK() callconv(.c) i32 {
@@ -20716,14 +22467,91 @@ export fn QMK_WriteLLVMProfileTo(path: [*:0]const u8) callconv(.c) i32 {
 
     return 0;
 }
+export fn QMK_SetClipboardOwnerHwnd(hwnd_value: usize) callconv(.c) i32 {
+    if (hwnd_value == 0) return 0;
+    g_clipboardOwnerHwnd = @ptrFromInt(hwnd_value);
+    return if (ensureClipboardMutex()) 1 else 0;
+}
+
+fn sendInputUnicodeText(text: []const u16) bool {
+    var batch: [128]InputSlot = undefined;
+    var pos: usize = 0;
+    while (pos < text.len) {
+        const count = @min(text.len - pos, 64);
+        for (0..count) |i| {
+            batch[i * 2] = .{ .wVk = 0, .wScan = text[pos + i], .dwFlags = KEYEVENTF_UNICODE, .dwExtraInfo = AHK_SENDLEVEL_2 };
+            batch[i * 2 + 1] = .{ .wVk = 0, .wScan = text[pos + i], .dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP, .dwExtraInfo = AHK_SENDLEVEL_2 };
+        }
+        const input_count: u32 = @intCast(count * 2);
+        if (SendInput(input_count, @ptrCast(&batch[0]), INPUT_STRUCT_SIZE) != input_count)
+            return false;
+        pos += count;
+    }
+    return true;
+}
+
+fn sendEventText(text: []const u16) bool {
+    for (text) |ch| {
+        const vk: u16 = if (ch == '\n' or ch == '\r') VK_RETURN else if (ch == '\t') 0x09 else blk: {
+            const scanBits = VkKeyScanW(ch);
+            if (scanBits == -1) return false;
+            break :blk @intCast(@as(u16, @bitCast(scanBits)) & 0xFF);
+        };
+        const scanBits: u16 = if (ch == '\n' or ch == '\r' or ch == '\t') 0 else @as(u16, @bitCast(VkKeyScanW(ch)));
+        const shift_state: u8 = @intCast((scanBits >> 8) & 0xFF);
+        const scan: u8 = @intCast(MapVirtualKeyW(vk, MAPVK_VK_TO_VSC) & 0xFF);
+        const extra: usize = AHK_SENDLEVEL_2;
+        if ((shift_state & 1) != 0) keybd_event(@intCast(VK_SHIFT), @intCast(MapVirtualKeyW(VK_SHIFT, MAPVK_VK_TO_VSC)), 0, extra);
+        if ((shift_state & 2) != 0) keybd_event(@intCast(VK_CONTROL), @intCast(MapVirtualKeyW(VK_CONTROL, MAPVK_VK_TO_VSC)), 0, extra);
+        if ((shift_state & 4) != 0) keybd_event(@intCast(VK_MENU), @intCast(MapVirtualKeyW(VK_MENU, MAPVK_VK_TO_VSC)), 0, extra);
+        keybd_event(@intCast(vk), scan, 0, extra);
+        keybd_event(@intCast(vk), scan, KEYEVENTF_KEYUP, extra);
+        if ((shift_state & 4) != 0) keybd_event(@intCast(VK_MENU), @intCast(MapVirtualKeyW(VK_MENU, MAPVK_VK_TO_VSC)), KEYEVENTF_KEYUP, extra);
+        if ((shift_state & 2) != 0) keybd_event(@intCast(VK_CONTROL), @intCast(MapVirtualKeyW(VK_CONTROL, MAPVK_VK_TO_VSC)), KEYEVENTF_KEYUP, extra);
+        if ((shift_state & 1) != 0) keybd_event(@intCast(VK_SHIFT), @intCast(MapVirtualKeyW(VK_SHIFT, MAPVK_VK_TO_VSC)), KEYEVENTF_KEYUP, extra);
+    }
+    return true;
+}
+
+fn sendInterceptionText(text: []const u16) bool {
+    if (!g_interceptionSendReady) return false;
+    for (text) |ch| {
+        if (ch == '\r') continue;
+        const effective: u16 = if (ch == '\n') VK_RETURN else if (ch == '\t') 0x09 else ch;
+        const scanBits = VkKeyScanW(effective);
+        if (scanBits == -1) return false;
+        const bits: u16 = @bitCast(scanBits);
+        const vk: i32 = @intCast(bits & 0xFF);
+        const state: u8 = @intCast((bits >> 8) & 0xFF);
+        const mods: u16 = (if ((state & 1) != 0) hotkeys.HOTKEY_MOD_SHIFT else 0)
+            | (if ((state & 2) != 0) hotkeys.HOTKEY_MOD_CTRL else 0)
+            | (if ((state & 4) != 0) hotkeys.HOTKEY_MOD_ALT else 0);
+        sendKeyDirect(vk, mods);
+    }
+    return true;
+}
+
+export fn QMK_SetPasteMode(mode: i32) callconv(.c) i32 {
+    if (mode < 0 or mode > 4) return 0;
+    g_pasteMode = mode;
+    return 1;
+}
+
 export fn QMK_Paste(text: [*:0]const u16) callconv(.c) i32 {
     const text_len = std.mem.len(text);
+    const text_slice = text[0..text_len];
+    if (g_pasteMode == 1) return if (sendInterceptionText(text_slice)) 1 else 0;
+    if (g_pasteMode == 3) return if (sendInputUnicodeText(text_slice)) 1 else 0;
+    if (g_pasteMode == 4) return if (sendEventText(text_slice)) 1 else 0;
+    if (g_pasteMode == 0 and !g_interceptionSendReady) return 0;
+    if (!lockClipboardState()) return 0;
+    defer unlockClipboardState();
     if (!openClipboardWithRetry()) return 0;
 
     backupClipboardAllOpen();
     _ = CloseClipboard();
 
-    if (!putWideOnClipboard(text[0..text_len])) return 0;
+    if (!putWideOnClipboard(text_slice)) return 0;
 
     const generation = @atomicRmw(u32, &g_hotstringClipboardRestoreGeneration, .Add, 1, .acq_rel) + 1;
     if (CreateThread(null, 0, restoreClipboardThreadProc, @ptrFromInt(@as(usize, generation)), 0, null)) |h| {
@@ -20740,7 +22568,7 @@ export fn QMK_Paste(text: [*:0]const u16) callconv(.c) i32 {
     ringAddTapWithInfoTagged(0x56, AHK_SENDLEVEL_2, 0);
     ringAddKeyWithInfo(VK_CONTROL, KEYEVENTF_KEYUP, AHK_SENDLEVEL_2);
     if (held_mod_mask != 0) ringAddModifierRestore(held_mod_mask, AHK_SENDLEVEL_2);
-    ringSendAtomic();
+    if (g_pasteMode == 0) ringSend() else ringSendAtomic();
 
     return 1;
 }

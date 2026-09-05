@@ -1,6 +1,6 @@
 # QMK.ahk Tutorial
 
-This tutorial is based on the project's current `lib/ReadMe_Tutorial.ahk` reference file. The examples are intentionally small so you can copy individual patterns into your own shortcut file.
+This tutorial is the sanitized reference for the public API. The examples are intentionally small so you can copy individual patterns into your own shortcut file.
 
 Some callback names in the examples—such as `media`, `edge`, `mm`, `VDA`, or `globals`—come from the author's personal AutoHotkey setup. Treat them as placeholders for your own functions.
 
@@ -187,7 +187,7 @@ QMK.SetupChords([
     ["a", "s", "k", "global", QMK.SendKeyDirect("+{Up}")],
     ["a", "s", "d", "h", "global", (*) => VDA.GoLeft()],
     ["a", "s", "d", "l", "global", (*) => VDA.GoRight()],
-    ["a", "s", "d", "f", "o", "global", (*) => outlookdesktop.activate(true)],
+    ["a", "s", "d", "f", "o", "global", (*) => ActivateExampleApp()],
 ])
 ```
 
@@ -230,10 +230,10 @@ A practical pattern is to dedicate memorable global hold keys to frequently used
 
 ```ahk
 QMK.SetupTaps([
-    ["h", "School - Anki", QMK.SendKeyDirect("1")],
-    ["j", "School - Anki", QMK.SendKeyDirect("2")],
-    ["k", "School - Anki", QMK.SendKeyDirect("4")],
-    ["l", "School - Anki", QMK.SendKeyDirect("{Enter}")],
+    ["h", "Example Editor", QMK.SendKeyDirect("1")],
+    ["j", "Example Editor", QMK.SendKeyDirect("2")],
+    ["k", "Example Editor", QMK.SendKeyDirect("4")],
+    ["l", "Example Editor", QMK.SendKeyDirect("{Enter}")],
 ])
 ```
 
@@ -259,7 +259,7 @@ A quick release takes the tap path; holding beyond the configured threshold take
 
 ```ahk
 QMK.SetupDoubleTaps([
-    ["LCtrl", "outlook.live.com", (*) => outlookdesktop.activate(true)],
+    ["LCtrl", "example.com", (*) => ActivateExampleApp()],
 ])
 ```
 
@@ -286,7 +286,7 @@ QMK can register AutoHotkey-style hotstring triggers in the native engine.
 QMK.SetupHotstrings([
     [":*:addr", "global", "123 Example Street"],
     [":*:email", "global", "user@example.com"],
-    [":*:sig", "ahk_exe OUTLOOK.EXE", (*) => PasteEmailSignature()],
+    [":*:sig", "ahk_exe ExampleApp.exe", (*) => InsertExampleSignature()],
 ])
 ```
 
@@ -465,4 +465,4 @@ QMK.SuspendExempt(callback)
 QMKUserConfig.ShowGui()
 ```
 
-For a runnable-style collection of examples, see **`lib/ReadMe_Tutorial.ahk`**.
+For a runnable-style collection of examples, see **`Quick_Demo.ahk`**.
