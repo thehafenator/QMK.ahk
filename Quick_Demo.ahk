@@ -402,14 +402,14 @@ Lesson2() {
         . "J / K / L mirror Alt / Win / Shift / Ctrl on the right hand.",
         CodeLines(
             "QMK.SetupModifiers([",
-            "    [""a"", ""Ctrl""],",
-            "    [""s"", ""Shift""],",
-            "    [""d"", ""Win""],",
-            "    [""f"", ""Alt""],",
-            "    [""j"", ""Alt""],",
-            "    [""k"", ""Win""],",
-            "    [""l"", ""Shift""],",
-            "    [""" . Chr(59) . """, ""Ctrl""],",
+            "    [`"a`, `"Ctrl`],",
+            "    [`"s`, `"Shift`],",
+            "    [`"d`, `"Win`],",
+            "    [`"f`, `"Alt`],",
+            "    [`"j`, `"Alt`],",
+            "    [`"k`, `"Win`],",
+            "    [`"l`, `"Shift`],",
+            "    [`";`, `"Ctrl`],",
             "])"
         )
     )
