@@ -231,7 +231,7 @@ Single keys can trigger actions based on how they are pressed.
 
 ```ahk
 QMK.SetupHolds([
-    ["e", ["global"], (*) => ActivateExampleApp()],
+    ["u", ["global"], (*) => Send("#{Up}")],
     ["h", ["global"], (*) => MoveExampleWindow("left")],
     ["j", ["global"], (*) => MoveExampleWindow("down-left")],
     ["k", ["global"], (*) => MoveExampleWindow("up-right")],
@@ -239,7 +239,7 @@ QMK.SetupHolds([
 ])
 ```
 
-A practical pattern is to dedicate memorable global hold keys to frequently used applications or window actions.
+A practical pattern is to dedicate memorable global hold keys to frequently used applications or window actions. For example, holding `u` can send `Win+Up` to maximize the active window. A callback is appropriate here because the hold action is an AutoHotkey window operation; simple fixed key output can use `QMK.SendKeyDirect()` where the API shape supports it.
 
 ## Taps and tap-holds
 
@@ -299,11 +299,13 @@ QMK can register AutoHotkey-style hotstring triggers in the native engine.
 
 ```ahk
 QMK.SetupHotstrings([
-    [":*:addr", "global", "123 Example Street"],
-    [":*:email", "global", "user@example.com"],
-    [":*:sig", "ahk_exe ExampleApp.exe", (*) => InsertExampleSignature()],
+    [":X:.email", "global", "demo@example.com"],
+    [":X:.addr", "global", "123 Example Street"],
+    [":X:.sig", "ahk_exe ExampleApp.exe", (*) => InsertExampleSignature()],
 ])
 ```
+
+These examples use the explicit `:X:` form with a visible punctuation prefix such as `.email`. That keeps the trigger deliberate and avoids the wildcard `*` form in a copy-paste example. Replace the demo replacement text with your own value; do not commit private addresses, signatures, or shortcut maps to a shared repository.
 
 ### Shape
 
@@ -480,4 +482,4 @@ QMK.SuspendExempt(callback)
 QMKUserConfig.ShowGui()
 ```
 
-For a runnable-style collection of examples, see **`Quick_Demo.ahk`**.
+For a runnable-style collection of examples, see the repository-root **`Quick_Demo.ahk`**.

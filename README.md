@@ -69,18 +69,18 @@ QMK.SetupCombos([
     ["a", ";", "global", QMK.SendKeyDirect("{Backspace}"), "instant"],
 ])
 
-; Context-aware hold action
+; Hold U and send Win+Up to maximize the active window
 QMK.SetupHolds([
-    ["k", ["youtube.com"], (*) => Send("{Space}")],
+    ["u", ["global"], (*) => Send("#{Up}")],
 ])
 
-; Hotstring
+; Explicit .email hotstring (no wildcard trigger)
 QMK.SetupHotstrings([
-    [":*:email", "global", "user@example.com"],
+    [":X:.email", "global", "demo@example.com"],
 ])
 ```
 
-The mappings are defined in AutoHotkey. QMK.ahk passes them into the native runtime at startup and handles keyboard events from there.
+The mappings are defined in AutoHotkey. QMK.ahk passes them into the native runtime at startup and handles keyboard events from there. For more complete patterns and API shapes, continue to the [full tutorial](docs/TUTORIAL.md).
 
 ---
 
@@ -99,7 +99,7 @@ The mappings are defined in AutoHotkey. QMK.ahk passes them into the native runt
 1. Read the **[Installation Guide](docs/INSTALL.md)** for the first setup and backend choice.
 2. Use the **[Tutorial](docs/TUTORIAL.md)** for the full API and backend behavior.
 3. Use the **[GUI Compiler Guide](docs/COMPILER_GUI.md)** only if you need to rebuild the native core.
-4. Open **[Quick_Demo.ahk](docs/Quick_Demo.ahk)** for a runnable sanitized example.
+4. Open **[Quick_Demo.ahk](Quick_Demo.ahk)** for a runnable sanitized example.
 
 ### Basic setup
 
@@ -271,7 +271,7 @@ Learn the API progressively: modifiers, contexts, combos, timing, chords, taps/h
 ### [GUI Compiler Guide](docs/COMPILER_GUI.md)
 Rebuild the native core from QMK Settings, choose the standard Zig build or optional Full PGO Build, and understand which outputs stay local.
 
-The copy/pasteable examples are in the sanitized [Tutorial](docs/TUTORIAL.md) and [quick demo](docs/Quick_Demo.ahk). They use generic contexts and callbacks rather than a user's personal shortcut files.
+The copy/pasteable examples are in the sanitized [Tutorial](docs/TUTORIAL.md) and [quick demo](Quick_Demo.ahk). They use generic contexts and callbacks rather than a user's personal shortcut files.
 
 ---
 

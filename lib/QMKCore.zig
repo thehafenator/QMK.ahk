@@ -67,6 +67,18 @@ fn precompiledVK(comptime name: []const u8) i32 {
     if (comptime precompiledKeyEq(name, "XButton2")) return 0x06;
     if (comptime precompiledKeyEq(name, "ScrollLock")) return 0x91;
     if (comptime precompiledKeyEq(name, "NumLock")) return 0x90;
+    if (comptime precompiledKeyEq(name, "Numpad0")) return 0x60;
+    if (comptime precompiledKeyEq(name, "Numpad1")) return 0x61;
+    if (comptime precompiledKeyEq(name, "Numpad2")) return 0x62;
+    if (comptime precompiledKeyEq(name, "Numpad3")) return 0x63;
+    if (comptime precompiledKeyEq(name, "Numpad4")) return 0x64;
+    if (comptime precompiledKeyEq(name, "Numpad5")) return 0x65;
+    if (comptime precompiledKeyEq(name, "Numpad6")) return 0x66;
+    if (comptime precompiledKeyEq(name, "Numpad7")) return 0x67;
+    if (comptime precompiledKeyEq(name, "Numpad8")) return 0x68;
+    if (comptime precompiledKeyEq(name, "Numpad9")) return 0x69;
+    if (comptime precompiledKeyEq(name, "NumpadAdd")) return 0x6B;
+    if (comptime precompiledKeyEq(name, "NumpadEnter")) return 0x0D;
     if (comptime precompiledKeyEq(name, "Insert")) return 0x2D;
     if (comptime precompiledKeyEq(name, "Delete")) return 0x2E;
     if (comptime precompiledKeyEq(name, "Home")) return 0x24;
@@ -216,17 +228,19 @@ const hotstrings = struct {
     pub const CONTEXT_GLOBAL: u64 = 0;
 
     pub const HotstringContextBits = struct {
-        pub const browser: u64 = 1 << 0;
-        pub const canvas: u64 = 1 << 1;
-        pub const truelearn: u64 = 1 << 2;
-        pub const churchofjesuschrist: u64 = 1 << 3;
-        pub const pathoma: u64 = 1 << 4;
-        pub const amboss: u64 = 1 << 5;
-        pub const google_calendar: u64 = 1 << 6;
-        pub const google_drive: u64 = 1 << 7;
-        pub const gmail: u64 = 1 << 8;
-        pub const youtube: u64 = 1 << 9;
-        pub const spotify: u64 = 1 << 10;
+        // Neutral ordinal names preserve the existing bit positions without
+        // embedding application, website, or user-specific context labels.
+        pub const context_00: u64 = 1 << 0;
+        pub const context_01: u64 = 1 << 1;
+        pub const context_02: u64 = 1 << 2;
+        pub const context_03: u64 = 1 << 3;
+        pub const context_04: u64 = 1 << 4;
+        pub const context_05: u64 = 1 << 5;
+        pub const context_06: u64 = 1 << 6;
+        pub const context_07: u64 = 1 << 7;
+        pub const context_08: u64 = 1 << 8;
+        pub const context_09: u64 = 1 << 9;
+        pub const context_10: u64 = 1 << 10;
     };
 
     pub const HotstringContextState = extern struct {
@@ -1048,6 +1062,18 @@ fn applyTypedPrecompiledShortcuts() void {
             @intCast(compiled_user_shortcuts.Compiled_Native_Controls.native_reload.len),
         };
     }
+    // Preserve the end of the compiled preload independently from the
+    // transaction publish lengths. Runtime setup advances the latter to the
+    // new total, but overlay matching must continue to compare only compiled
+    // rows against the runtime suffix.
+    g_compiledModifiersLen = g_runtimeModifiersLen;
+    g_compiledPassthroughsLen = g_runtimePassthroughsLen;
+    g_compiledHotkeysLen = g_runtimeHotkeysLen;
+    g_compiledContextActionsLen = g_runtimeContextActionsLen;
+    g_compiledCombosLen = g_runtimeCombosLen;
+    g_compiledInstantCombosLen = g_runtimeInstantCombosLen;
+    g_compiledChordsLen = g_runtimeChordsLen;
+    g_compiledHotstringsLen = g_runtimeHotstringLen;
     // Compiled hotkeys live in the runtime hotkey rows, so they must take the
     // same context-automaton/index rebuild path as QMK_SetupHotkeys().  The
     // bulk dirty flag alone rebuilds row metadata but leaves the context loop
@@ -2188,6 +2214,9 @@ var g_runtimeHotkeyContexts: []RuntimeHotkeyText = g_runtimeHotkeyContextsEmpty[
 var g_runtimeHotkeysCap: usize = 0;
 var g_runtimeHotkeysLen: usize = 0;
 var g_runtimeHotkeysPublishedLen: usize = 0;
+// Published length advances after runtime setup. This separate boundary
+// remains fixed at the end of the compiled preload for overlay matching.
+var g_compiledHotkeysLen: usize = 0;
 var g_runtimeHotkeyGate: [VK_COUNT]bool = [_]bool{false} ** VK_COUNT;
 var g_runtimeContextHotkeyGate: [VK_COUNT]bool = [_]bool{false} ** VK_COUNT;
 var g_runtimeHotkeysSuspended: i32 = 0;
@@ -2214,6 +2243,7 @@ var g_runtimeContextActionTexts: []RuntimeContextActionText = g_runtimeContextAc
 var g_runtimeContextActionsCap: usize = 0;
 var g_runtimeContextActionsLen: usize = 0;
 var g_runtimeContextActionsPublishedLen: usize = 0;
+var g_compiledContextActionsLen: usize = 0;
 var g_runtimeHoldTouched: [VK_COUNT]bool = [_]bool{false} ** VK_COUNT;
 var g_runtimeContextActionGate: [VK_COUNT]bool = [_]bool{false} ** VK_COUNT;
 var g_runtimeDoubleTapTouched: [VK_COUNT]bool = [_]bool{false} ** VK_COUNT;
@@ -2240,6 +2270,7 @@ var g_runtimeModifierTexts: []RuntimeContextActionText = g_runtimeModifierTextsE
 var g_runtimeModifiersCap: usize = 0;
 var g_runtimeModifiersLen: usize = 0;
 var g_runtimeModifiersPublishedLen: usize = 0;
+var g_compiledModifiersLen: usize = 0;
 var g_runtimeModifierTouched: [VK_COUNT]bool = [_]bool{false} ** VK_COUNT;
 var g_runtimeContextModifierGate: [VK_COUNT]bool = [_]bool{false} ** VK_COUNT;
 var g_runtimeModifierBaseType: [VK_COUNT]i8 = [_]i8{MOD_NONE} ** VK_COUNT;
@@ -2257,6 +2288,7 @@ var g_runtimePassthroughTexts: []RuntimeContextActionText = g_runtimePassthrough
 var g_runtimePassthroughsCap: usize = 0;
 var g_runtimePassthroughsLen: usize = 0;
 var g_runtimePassthroughsPublishedLen: usize = 0;
+var g_compiledPassthroughsLen: usize = 0;
 const RuntimePassthroughActiveBank = struct {
     enabled: [VK_COUNT]bool = [_]bool{false} ** VK_COUNT,
 };
@@ -2275,6 +2307,7 @@ var g_runtimeComboTexts: []RuntimeComboText = g_runtimeComboTextsEmpty[0..];
 var g_runtimeCombosCap: usize = 0;
 var g_runtimeCombosLen: usize = 0;
 var g_runtimeCombosPublishedLen: usize = 0;
+var g_compiledCombosLen: usize = 0;
 var g_runtimeInstantCombosEmpty: [0]RuntimeCombo = .{};
 var g_runtimeInstantComboTextsEmpty: [0]RuntimeComboText = .{};
 var g_runtimeInstantCombos: []RuntimeCombo = g_runtimeInstantCombosEmpty[0..];
@@ -2282,6 +2315,7 @@ var g_runtimeInstantComboTexts: []RuntimeComboText = g_runtimeInstantComboTextsE
 var g_runtimeInstantCombosCap: usize = 0;
 var g_runtimeInstantCombosLen: usize = 0;
 var g_runtimeInstantCombosPublishedLen: usize = 0;
+var g_compiledInstantCombosLen: usize = 0;
 var g_runtimeComboPublishedRegistrationSeq: u32 = 0;
 var g_runtimeComboRegistrationSeq: u32 = 0;
 const RUNTIME_CHORD_CONTEXT_CHARS: usize = 256;
@@ -2294,6 +2328,7 @@ var g_runtimeChordTexts: []RuntimeChordText = g_runtimeChordTextsEmpty[0..];
 var g_runtimeChordsCap: usize = 0;
 var g_runtimeChordsLen: usize = 0;
 var g_runtimeChordsPublishedLen: usize = 0;
+var g_compiledChordsLen: usize = 0;
 // Permanent structural hint for contextual chord lookup. This is separate
 // from the active chord bank: an inactive contextual chord still needs a
 // context refresh before its candidate can be selected.
@@ -3243,6 +3278,7 @@ var g_runtimeHotstringCallbackIdsEmpty: [0]i32 = .{};
 var g_runtimeHotstringCallbackIds: []i32 = g_runtimeHotstringCallbackIdsEmpty[0..];
 var g_runtimeHotstringLen: usize = 0;
 var g_runtimeHotstringPublishedLen: usize = 0;
+var g_compiledHotstringsLen: usize = 0;
 var g_runtimeHotstringSuspendExemptEmpty: [0]bool = .{};
 var g_runtimeHotstringSuspendExempt: []bool = g_runtimeHotstringSuspendExemptEmpty[0..];
 // Runtime hotstring context rows. Contexts are evaluated in Zig on context change,
@@ -5659,6 +5695,8 @@ var g_nativePasteFired: u32 = 0;
 var g_nativePasteDropped: u32 = 0;
 var g_nativePasteFailed: u32 = 0;
 var g_testDirectKeySendCount: u32 = 0;
+var g_testLastDirectKeyVK: i32 = 0;
+var g_testLastDirectModifierMask: u16 = 0;
 
 fn nativePasteThreadProc(_: ?*anyopaque) callconv(.winapi) u32 {
     _ = SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
@@ -6292,14 +6330,22 @@ fn clearRuntimePublishStateForReset() void {
     g_runtimeHotkeyContextsDirty = false;
     g_hsContextIndexDirty = false;
     g_runtimeHotkeysPublishedLen = 0;
+    g_compiledHotkeysLen = 0;
     g_runtimeContextActionsPublishedLen = 0;
+    g_compiledContextActionsLen = 0;
     g_runtimeModifiersPublishedLen = 0;
+    g_compiledModifiersLen = 0;
     g_runtimePassthroughsPublishedLen = 0;
+    g_compiledPassthroughsLen = 0;
     g_runtimeCombosPublishedLen = 0;
+    g_compiledCombosLen = 0;
     g_runtimeInstantCombosPublishedLen = 0;
+    g_compiledInstantCombosLen = 0;
     g_runtimeComboPublishedRegistrationSeq = 0;
     g_runtimeChordsPublishedLen = 0;
+    g_compiledChordsLen = 0;
     g_runtimeHotstringPublishedLen = 0;
+    g_compiledHotstringsLen = 0;
     g_hsCtxRowsPublishedLen = 0;
     g_nativeHotstringPayloadsPublishedLen = 0;
     g_bulkSetupSerial = 0;
@@ -6771,6 +6817,8 @@ inline fn hotstringObserveSyntheticEdit(vk: i32, modifierMask: u16) void {
 }
 
 fn sendKeyDirectWithInfo(vk: i32, modifierMask: u16, extraInfo: u64) void {
+    g_testLastDirectKeyVK = vk;
+    g_testLastDirectModifierMask = modifierMask;
     if (compiled_shortcuts_test_observability)
         _ = @atomicRmw(u32, &g_testDirectKeySendCount, .Add, 1, .monotonic);
     if (vk == 0) return;
@@ -11465,7 +11513,11 @@ fn modPollThreadProc(_: ?*anyopaque) callconv(.winapi) u32 {
             for (ALL_MOD_VKS) |vk| {
                 const downTime = g_modPollDownTime[@intCast(vk)];
                 if (downTime == 0.0) continue; // this VK was never pressed in this cycle
-                const cbId = activeContextDerived().doubleTapCallback[@intCast(vk)];
+                // Resolve the runtime overlay first.  The derived key-gate
+                // snapshot is optimized for ordinary key dispatch, but the
+                // physical-modifier poll path must use the same effective
+                // callback selection as the runtime takeover path.
+                const cbId = effectiveDoubleTapCallbackId(@intCast(vk));
                 if (cbId != -1) {
                     const pressDuration = releaseTime - downTime;
                     const priorUp = g_modPollLastUpTime[@intCast(vk)];
@@ -16161,6 +16213,38 @@ export fn QMK_GetRuntimeHotstringReplacement(
     return -1;
 }
 
+/// Test-only indexed view of the published hotstring bank.  The trigger-based
+/// debug export intentionally returns the first matching row, which is not
+/// enough to prove compiled-prefix/runtime-suffix takeover when both rows have
+/// the same trigger.  This export exposes the active bit and payload identity
+/// for one stable storage index without changing production dispatch.
+export fn QMK_TestGetRuntimeHotstringDebugAt(
+    index_in: i32,
+    outAction: *u32,
+    outReplacementBytes: *u32,
+    outCallbackId: *i32,
+    outEnabled: *u32,
+    outCtxCount: *u32,
+) callconv(.c) i32 {
+    outAction.* = 0xFFFF_FFFF;
+    outReplacementBytes.* = 0;
+    outCallbackId.* = 0;
+    outEnabled.* = 0;
+    outCtxCount.* = 0;
+    if (!compiled_shortcuts_test_observability or index_in < 0) return 0;
+    const index: usize = @intCast(index_in);
+    if (index >= g_runtimeHotstringLen) return 0;
+    const entry = g_runtimeHotstringEntries[index];
+    outAction.* = @intFromEnum(entry.action);
+    outReplacementBytes.* = @intCast(entry.replacement.len);
+    outCallbackId.* = g_runtimeHotstringCallbackIds[index];
+    outCtxCount.* = g_runtimeHotstringCtxCount[index];
+    const runtime_view = activeRuntimeHotstrings();
+    if (index < runtime_view.len)
+        outEnabled.* = if (runtime_view.entries[index].options.enabled) 1 else 0;
+    return 1;
+}
+
 fn utf16ToUtf8Alloc(utf16: []const u16) ![]const u8 {
     if (utf16.len == 0) return "";
     var utf8 = try gAlloc.alloc(u8, utf16.len * 3 + 1);
@@ -16250,9 +16334,9 @@ fn runtimeHotstringDuplicateAt(index: usize) bool {
 }
 
 fn runtimeHotstringOverriddenByRuntime(index: usize) bool {
-    if (index >= g_runtimeHotstringPublishedLen) return false;
+    if (index >= g_compiledHotstringsLen) return false;
     const compiled = g_runtimeHotstringEntries[index];
-    var runtime_index = g_runtimeHotstringPublishedLen;
+    var runtime_index = g_compiledHotstringsLen;
     while (runtime_index < g_runtimeHotstringLen) : (runtime_index += 1) {
         const runtime = g_runtimeHotstringEntries[runtime_index];
         if (!hotstrings.bytesEqual(compiled.trigger, runtime.trigger, false)) continue;
@@ -16858,6 +16942,16 @@ export fn QMK_GetNativePasteStats(
 export fn QMK_TestGetDirectKeySendCount() callconv(.c) u32 {
     if (!compiled_shortcuts_test_observability) return 0;
     return @atomicLoad(u32, &g_testDirectKeySendCount, .monotonic);
+}
+
+export fn QMK_TestGetLastDirectKeyVK() callconv(.c) i32 {
+    if (!compiled_shortcuts_test_observability) return -1;
+    return g_testLastDirectKeyVK;
+}
+
+export fn QMK_TestGetLastDirectModifierMask() callconv(.c) u16 {
+    if (!compiled_shortcuts_test_observability) return 0;
+    return g_testLastDirectModifierMask;
 }
 
 
@@ -17879,12 +17973,12 @@ inline fn queueAnyHotkeyIfMatchedWithGenericModFallback(vk: i32, active_mods: u1
 }
 
 fn runtimeModifierOverriddenByRuntime(index: usize) bool {
-    if (index >= g_runtimeModifiersPublishedLen) return false;
+    if (index >= g_compiledModifiersLen) return false;
     const compiled = g_runtimeModifiers[index];
-    var runtime_index = g_runtimeModifiersPublishedLen;
+    var runtime_index = g_compiledModifiersLen;
     while (runtime_index < g_runtimeModifiersLen) : (runtime_index += 1) {
         const runtime = g_runtimeModifiers[runtime_index];
-        if (runtime.vk != compiled.vk or runtime.modType != compiled.modType or
+        if (runtime.vk != compiled.vk or
             runtime.contextKind != compiled.contextKind or
             runtime.contextNegated != compiled.contextNegated) continue;
         if (runtimeContextTextEqual(g_runtimeModifierTexts[index][0..@as(usize, @intCast(compiled.contextLen))],
@@ -17894,7 +17988,7 @@ fn runtimeModifierOverriddenByRuntime(index: usize) bool {
 }
 
 fn runtimeComboOverriddenByRuntime(row: RuntimeCombo, context_text: []const u16) bool {
-    var i: usize = g_runtimeCombosPublishedLen;
+    var i: usize = g_compiledCombosLen;
     while (i < g_runtimeCombosLen) : (i += 1) {
         const runtime = g_runtimeCombos[i];
         if (runtime.primaryVK != row.primaryVK or runtime.secondaryVK != row.secondaryVK or
@@ -17902,7 +17996,7 @@ fn runtimeComboOverriddenByRuntime(row: RuntimeCombo, context_text: []const u16)
             runtime.contextKind != row.contextKind or runtime.contextNegated != row.contextNegated) continue;
         if (runtimeContextTextEqual(g_runtimeComboTexts[i][0..@as(usize, @intCast(runtime.contextLen))], context_text)) return true;
     }
-    i = g_runtimeInstantCombosPublishedLen;
+    i = g_compiledInstantCombosLen;
     while (i < g_runtimeInstantCombosLen) : (i += 1) {
         const runtime = g_runtimeInstantCombos[i];
         if (runtime.primaryVK != row.primaryVK or runtime.secondaryVK != row.secondaryVK or
@@ -17914,9 +18008,9 @@ fn runtimeComboOverriddenByRuntime(row: RuntimeCombo, context_text: []const u16)
 }
 
 fn runtimeContextActionOverriddenByRuntime(index: usize) bool {
-    if (index >= g_runtimeContextActionsPublishedLen) return false;
+    if (index >= g_compiledContextActionsLen) return false;
     const compiled = g_runtimeContextActions[index];
-    var runtime_index = g_runtimeContextActionsPublishedLen;
+    var runtime_index = g_compiledContextActionsLen;
     while (runtime_index < g_runtimeContextActionsLen) : (runtime_index += 1) {
         const runtime = g_runtimeContextActions[runtime_index];
         if (runtime.triggerVK != compiled.triggerVK or
@@ -17934,9 +18028,9 @@ fn runtimeContextActionOverriddenByRuntime(index: usize) bool {
 // compared: replacing a compiled callback with a runtime callback is the
 // purpose of this overlay.
 fn runtimeHotkeyOverriddenByRuntime(index: usize) bool {
-    if (index >= g_runtimeHotkeysPublishedLen) return false;
+    if (index >= g_compiledHotkeysLen) return false;
     const compiled = g_runtimeHotkeys[index];
-    var runtime_index = g_runtimeHotkeysPublishedLen;
+    var runtime_index = g_compiledHotkeysLen;
     while (runtime_index < g_runtimeHotkeysLen) : (runtime_index += 1) {
         const runtime = g_runtimeHotkeys[runtime_index];
         if (runtime.triggerVK != compiled.triggerVK or
@@ -18828,8 +18922,12 @@ fn rebuildActiveRuntimeModifiers() bool {
         const row = g_runtimeModifiers[i];
         if (row.vk <= 0 or row.vk >= VK_COUNT) continue;
         const row_vk: usize = @intCast(row.vk);
-        // Strict > preserves the first registration on an exact precedence tie.
-        if (!best_seen[row_vk] or row.specificityMask > best_mask[row_vk]) {
+        // Compiled rows occupy the prefix and runtime rows are appended.  A
+        // runtime row with the same key/context identity must replace the
+        // compiled row even when its specificity is equal; its modifier type
+        // is the runtime takeover payload.
+        if (!best_seen[row_vk] or row.specificityMask > best_mask[row_vk] or
+            (row.specificityMask == best_mask[row_vk] and i >= g_compiledModifiersLen)) {
             best_seen[row_vk] = true;
             bank.modType[row_vk] = row.modType;
             best_mask[row_vk] = row.specificityMask;
@@ -18871,27 +18969,32 @@ fn rebuildActiveRuntimeContextActions() bool {
         if (!runtimeContextActionAllows(i)) continue;
         const vk: usize = @intCast(action.triggerVK);
         switch (action.actionKind) {
-            0 => if (!hold_seen[vk] or action.specificityMask > best_hold_mask[vk]) {
+            0 => if (!hold_seen[vk] or action.specificityMask > best_hold_mask[vk] or
+                (action.specificityMask == best_hold_mask[vk] and i >= g_compiledContextActionsLen)) {
                 hold_seen[vk] = true;
                 bank.hold[vk] = action.callbackId;
                 best_hold_mask[vk] = action.specificityMask;
             },
-            1 => if (!double_seen[vk] or action.specificityMask > best_double_mask[vk]) {
+            1 => if (!double_seen[vk] or action.specificityMask > best_double_mask[vk] or
+                (action.specificityMask == best_double_mask[vk] and i >= g_compiledContextActionsLen)) {
                 double_seen[vk] = true;
                 bank.doubleTap[vk] = action.callbackId;
                 best_double_mask[vk] = action.specificityMask;
             },
-            2 => if (!th_tap_seen[vk] or action.specificityMask > best_th_tap_mask[vk]) {
+            2 => if (!th_tap_seen[vk] or action.specificityMask > best_th_tap_mask[vk] or
+                (action.specificityMask == best_th_tap_mask[vk] and i >= g_compiledContextActionsLen)) {
                 th_tap_seen[vk] = true;
                 bank.tapHoldTap[vk] = action.callbackId;
                 best_th_tap_mask[vk] = action.specificityMask;
             },
-            3 => if (!th_hold_seen[vk] or action.specificityMask > best_th_hold_mask[vk]) {
+            3 => if (!th_hold_seen[vk] or action.specificityMask > best_th_hold_mask[vk] or
+                (action.specificityMask == best_th_hold_mask[vk] and i >= g_compiledContextActionsLen)) {
                 th_hold_seen[vk] = true;
                 bank.tapHoldHold[vk] = action.callbackId;
                 best_th_hold_mask[vk] = action.specificityMask;
             },
-            else => if (!th_tuning_seen[vk] or action.specificityMask > best_th_tuning_mask[vk]) {
+            else => if (!th_tuning_seen[vk] or action.specificityMask > best_th_tuning_mask[vk] or
+                (action.specificityMask == best_th_tuning_mask[vk] and i >= g_compiledContextActionsLen)) {
                 th_tuning_seen[vk] = true;
                 bank.tapHoldTap[vk] = action.tapCallbackId;
                 bank.tapHoldHold[vk] = action.holdCallbackId;
@@ -19002,9 +19105,9 @@ fn rebuildActiveRuntimeCombos() bool {
         // asking that helper about the runtime row itself makes it find itself
         // and suppress the overlay (and, consequently, the compiled row too).
         const is_compiled_preload = if (take_normal)
-            row_index < g_runtimeCombosPublishedLen
+            row_index < g_compiledCombosLen
         else
-            row_index < g_runtimeInstantCombosPublishedLen;
+            row_index < g_compiledInstantCombosLen;
         const allowed = if (take_normal)
             runtimeComboAllows(row, runtimeComboText(row_index))
         else
@@ -19051,9 +19154,9 @@ inline fn runtimeChordText(index: usize) []const u16 {
 }
 
 fn runtimeChordOverriddenByRuntime(index: usize) bool {
-    if (index >= g_runtimeChordsPublishedLen) return false;
+    if (index >= g_compiledChordsLen) return false;
     const compiled = g_runtimeChords[index];
-    var runtime_index = g_runtimeChordsPublishedLen;
+    var runtime_index = g_compiledChordsLen;
     while (runtime_index < g_runtimeChordsLen) : (runtime_index += 1) {
         const runtime = g_runtimeChords[runtime_index];
         if (runtime.key != compiled.key or runtime.keyCount != compiled.keyCount or
@@ -19196,7 +19299,14 @@ fn rebuildActiveRuntimeChords() bool {
             best_mask[identity] = row.specificityMask;
             best_index[identity] = i;
             identity_len += 1;
-        } else if (row.specificityMask > best_mask[identity]) {
+        } else if (row.specificityMask > best_mask[identity] or
+            // A runtime row is the authoritative takeover when it has the
+            // same canonical chord identity and context as a compiled row.
+            // Keep the normal first-registration tie rule for two rows from
+            // the same side, but never let the compiled prefix win this
+            // exact runtime-overlay tie.
+            (row.specificityMask == best_mask[identity] and
+                best_index[identity] < g_compiledChordsLen and i >= g_compiledChordsLen)) {
             best_mask[identity] = row.specificityMask;
             best_index[identity] = i;
         }
@@ -19269,9 +19379,9 @@ fn ensureRuntimePassthroughCapacity(required: usize) bool {
 }
 
 fn runtimePassthroughOverriddenByRuntime(index: usize) bool {
-    if (index >= g_runtimePassthroughsPublishedLen) return false;
+    if (index >= g_compiledPassthroughsLen) return false;
     const compiled = g_runtimePassthroughs[index];
-    var runtime_index = g_runtimePassthroughsPublishedLen;
+    var runtime_index = g_compiledPassthroughsLen;
     while (runtime_index < g_runtimePassthroughsLen) : (runtime_index += 1) {
         const runtime = g_runtimePassthroughs[runtime_index];
         if (runtime.vk != compiled.vk or runtime.contextKind != compiled.contextKind or
@@ -19291,7 +19401,7 @@ fn appendRuntimePassthrough(vk: i32, context_kind: u8, context_negated: bool, co
         const row = g_runtimePassthroughs[i];
         const len: usize = @intCast(row.contextLen);
         if (row.vk == vk and row.contextKind == context_kind and row.contextNegated == context_negated and
-            row.suspendExempt == suspend_exempt and runtimeContextTextEqual(g_runtimePassthroughTexts[i][0..len], context_text)) return false;
+            row.suspendExempt == suspend_exempt and runtimeContextTextEqual(g_runtimePassthroughTexts[i][0..len], context_text)) return true;
     }
     const slot = g_runtimePassthroughsLen;
     @memset(&g_runtimePassthroughTexts[slot], 0);
@@ -19853,7 +19963,7 @@ fn runtimeHotkeySpecificityMask(context_kind: u8, ctx: []const u16) u8 {
     }
     if (parsed.exe.len != 0) mask |= RUNTIME_CONTEXT_EXE_BIT;
 
-    // Plain forms such as "anki.exe" may have no ahk_exe token.
+    // Plain executable forms may have no ahk_exe token.
     if (mask == 0) {
         mask = switch (context_kind) {
             2 => RUNTIME_CONTEXT_WEBSITE_BIT,
@@ -20050,9 +20160,9 @@ inline fn refreshForegroundContextIfChanged() void {
         return;
     };
     // AHK v2 evaluates WinGetTitle/WinGetClass/WinGetProcessName("A") at
-    // match time. The title can change while the HWND stays the same (Anki
-    // changes its document title this way), so this deliberately repolls the
-    // foreground window and its metadata on every eligible input event. There
+    // match time. Titles can change while the HWND stays the same, so this
+    // deliberately repolls the foreground window and its metadata on every
+    // eligible input event. There
     // is no HWND/PID cache in this path. The affected context banks are rebuilt
     // synchronously before the current key is matched.
     const result = refreshForegroundContextFromHwndMode(foreground, false);
@@ -20292,7 +20402,7 @@ inline fn dispatchContextualTapAction(callback_id: i32) void {
             // Match the authoritative runtime hotkey path: ordinary native
             // text payloads use the paste worker; only SendKeyDirect-shaped
             // payloads stay on the direct-key path.  Dropping this branch made
-            // compiled taps (for example Anki h/j/k/l) silently no-op.
+            // compiled taps can otherwise silently no-op.
             enqueueNativePaste(9, callback_id);
         }
         return;
@@ -21503,7 +21613,9 @@ fn recordPhysicalModifierUpForDoubleTap(vk: i32) void {
     const downTime = g_modPollDownTime[idx];
     if (downTime == 0.0) return;
     const releaseTime = getTime();
-    const cbId = activeContextDerived().doubleTapCallback[idx];
+    // Runtime context actions are the authoritative overlay for a compiled
+    // double-tap row, including the physical-modifier path.
+    const cbId = effectiveDoubleTapCallbackId(idx);
     if (cbId != -1) {
         const pressDuration = releaseTime - downTime;
         const priorUp = g_modPollLastUpTime[idx];

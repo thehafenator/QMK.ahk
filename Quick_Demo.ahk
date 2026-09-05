@@ -1,14 +1,14 @@
 #Requires AutoHotkey v2.0
 #SingleInstance Force
-#Include %A_LineFile%\..\..\QMKInterception.ahk
+#Include %A_LineFile%\..\QMKInterception.ahk
 
-#Include Example Dependencies\UIA\Lib\UIA.ahk
-#Include Example Dependencies\UIA\Lib\UIA_Browser.ahk
-#Include Example Dependencies\Monitor Manager.ahk
-#Include Example Dependencies\OnWebsite.ahk
-#Include Example Dependencies\mouse.ahk
-#Include Example Dependencies\scroll.ahk
-#Include Example Dependencies\TabActivator.ahk
+#Include %A_LineFile%\..\docs\Example Dependencies\UIA\Lib\UIA.ahk
+#Include %A_LineFile%\..\docs\Example Dependencies\UIA\Lib\UIA_Browser.ahk
+#Include %A_LineFile%\..\docs\Example Dependencies\Monitor Manager.ahk
+#Include %A_LineFile%\..\docs\Example Dependencies\OnWebsite.ahk
+#Include %A_LineFile%\..\docs\Example Dependencies\mouse.ahk
+#Include %A_LineFile%\..\docs\Example Dependencies\scroll.ahk
+#Include %A_LineFile%\..\docs\Example Dependencies\TabActivator.ahk
 
 /*
     ============================================================================
@@ -378,9 +378,9 @@ Lesson1() {
         . "Win+Escape = Exit",
         CodeLines(
             "QMK.SetupHotkeys([",
-            "    [""^!s"", ""global"", QMK.SuspendExempt((*) => QMK.Suspend())],",
-            "    [""*^+r"", ""global"", ""nativeReload"", true],",
-            "    [""*#Escape"", ""global"", ""panicExit"", true],",
+            "    [`"^!s`, `"global`, QMK.SuspendExempt((*) => QMK.Suspend())],",
+            "    [`"*^+r`, `"global`, `"nativeReload`, true],",
+            "    [`"*#Escape`, `"global`, `"panicExit`, true],",
             "])"
         )
     )
@@ -805,7 +805,7 @@ ShowHoldDemo() {
 ; ============================================================================
 
 OpenFullTutorial() {
-    tutorialPath := A_ScriptDir "\TUTORIAL.md"
+    tutorialPath := A_ScriptDir "\docs\TUTORIAL.md"
 
     if FileExist(tutorialPath) {
         Run(tutorialPath)
@@ -815,7 +815,7 @@ OpenFullTutorial() {
     MsgBox(
         "Could not find the tutorial at:`n`n"
         . tutorialPath
-        . "`n`nExpected file: docs\TUTORIAL.md",
+        . "`n`nExpected file: " tutorialPath,
         "QMK.ahk Tutorial"
     )
 }
