@@ -127,7 +127,7 @@ If Windows marks the downloaded archive or DLLs as blocked, use the file's **Pro
 
 ## API overview
 
-QMK.ahk intentionally keeps the public setup API small. Most configuration is done through these calls:
+QMK.ahk intentionally keeps the public setup API small (see the tutorial for concrete examples). Most configuration is done through these calls:
 
 ```ahk
 QMK.SetupModifiers([...])
@@ -146,19 +146,23 @@ QMK.SetupHotkeys([...])
 A mapping can either:
 
 - execute an **AutoHotkey callback**, or
-- use a native QMK action such as `QMK.SendKeyDirect(...)` when only keyboard output is needed.
+- use a native QMK action such as `QMK.SendKeyDirect(...)` to send a keystroke through the dll, which is faster than a round-trip back to AutoHotkey. 
 
 ```ahk
-; Native key send
-["j", "k", "global", QMK.SendKeyDirect("{Escape}"), "instant"]
+; Native key send with a 2-key combo
+QMK.SetupCombos([
+["j", "k", "global", QMK.SendKeyDirect("{Escape}"), "instant"],
+)]
 
-; AutoHotkey callback
+; AutoHotkey callback with a Setup Hold
+QMK.SetupHolds([
 ["h", ["global"], (*) => MyWindowManager.SnapLeft()]
+)]
 ```
 
 ### Contexts
 
-The same API can be scoped to where a shortcut should work:
+These strings help determine what contexts (which program needs to be active) for a given context to run. More on this here: (**[Tutorial](docs/TUTORIAL.md)**.:
 
 ```ahk
 "global"
@@ -167,9 +171,6 @@ The same API can be scoped to where a shortcut should work:
 "ahk_class Chrome_WidgetWin_1 ahk_exe msedge.exe"
 "docs.google.com"
 ```
-
-The full syntax, parameter shapes, context rules, timing behavior, and examples are covered in the **[Tutorial](docs/TUTORIAL.md)**.
-
 ---
 
 ## Example uses
@@ -201,14 +202,14 @@ The same physical shortcut can have application-specific behavior with a global 
 
 ## How it works
 
-QMK.ahk uses AutoHotkey as the configuration and automation layer and a native Zig DLL as the timing-sensitive keyboard engine.
+QMKInterception.ahk uses a native Zig DLL and either a low-level keyboardhook to add extra layers of shortcuts underneath your existing AutoHotkey setup. When AutoHotkey Runs, your shortcuts are passed into the dll, then keystrokes are interpretted by the dll before 
 
 ```text
 Your AutoHotkey script
         │
         │ QMK.Setup...()
         ▼
-     QMK.ahk
+     QMKInterception.ahk
         │
         │ runtime configuration
         ▼
@@ -226,13 +227,13 @@ Your AutoHotkey script
  native key action or AHK callback
 ```
 
-User mappings are runtime data. **You do not need to rebuild the Zig core when you add or change shortcuts.**
+User mappings are runtime data, and much like AutoHotkey itself, the runtime shape makes it easy to edit your shortcuts without needing to compile to native code. If you notice startup lag, however, you can transpile your shortcuts to native Zig and and AutoHotkey callback table. 
 
 ---
 
 ## Performance
 
-The native core exists to keep the event path lightweight and predictable even with large shortcut configurations.
+I built this to be as fast and memory safe as possible. Sometimes I am amazed at how fast native code executes. 
 
 Current development measurements reported by the project are approximately:
 
@@ -241,15 +242,13 @@ Current development measurements reported by the project are approximately:
 | PGO-optimized native core | ~2 µs |
 | Standard Zig build | ~10 µs |
 
-Runtime shortcut configuration is batched during startup; current development measurements are roughly **~10 ms** for setup.
-
-These are development measurements rather than guaranteed results for every machine or configuration.
+After initial runtime initialization, current development measurements are roughly **1~10 us** for key delay - roughly 7-8 thousand times faster than a 60 Hz screen takes to update one frame.
 
 ---
 
 ## Input and output options
 
-QMK.ahk is not tied to one capture method. The current project supports input/output paths including:
+For those that may not be able to install the interception driver (which requires administrator priveleges), a low-level hook in the native code also exists. The current project supports input/output paths including:
 
 - **Interception** — optional low-level keyboard capture/send path
 - **Windows low-level hook** — driver-free capture path
@@ -263,7 +262,7 @@ The settings interface can be used to select the appropriate backend for your sy
 ## Documentation
 
 ### [Installation Guide](docs/INSTALL.md)
-Install QMK.ahk, choose an input/output backend, verify the setup, troubleshoot common problems, and optionally build QMKCore yourself.
+Install QMKInterception.ahk, include into your script, choose an input/output backend, verify the setup, troubleshoot common problems, and optionally build QMKCore yourself.
 
 ### [Tutorial](docs/TUTORIAL.md)
 Learn the API progressively: modifiers, contexts, combos, timing, chords, taps/holds, hotstrings, hotkeys, settings, and advanced configuration.
@@ -275,21 +274,20 @@ The copy/pasteable examples are in the sanitized [Tutorial](docs/TUTORIAL.md) an
 
 ---
 
-## QMK.ahk vs. keyboard firmware
+## Benefits of QMKInterception.ahk vs. keyboard firmware
 
-QMK.ahk is inspired by the flexibility of QMK/ZMK-style keyboard configuration, but it runs on Windows rather than inside your keyboard.
+QMKInterception.ahk is inspired by the flexibility of QMK/ZMK-style keyboard configuration, but instead of compiling on the firmware level, it is emulated at a sofware level.
 
-That has a few useful consequences:
+This means:
 
 - no special programmable keyboard is required
 - no firmware flashing is required
-- configuration can be reloaded quickly
-- mappings can directly call AutoHotkey functions and Windows automation
-- shortcuts can react to the active application, window, or website
+- configuration can be changed reloaded quickly
+- mappings can directly call AutoHotkey functions. 
+- Shortcuts can react to the active application, window, or website
 
-Firmware still has advantages when you need behavior that is completely independent of Windows or AutoHotkey. QMK.ahk is aimed at users who want firmware-like keyboard behavior **plus** desktop-aware automation.
 
----
+--
 
 ## Notes
 
