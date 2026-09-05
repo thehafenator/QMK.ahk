@@ -1,379 +1,305 @@
-# QMK.ahk - Keyboard Layers and Home Row Modifiers in AutoHotkey v2
+# QMK.ahk
 
----
-## TLDR:
-QMK is a powerful open-source firmware for mechanical keyboards, enabling custom key mappings, layers, and shortcuts for enhanced productivity and ergonomics. This AutoHotkey v2 script, split into `QMKClass.ahk` (core logic) and `QMK.ahk` for user-defined shortcuts  brings QMK-like functionality to any keyboard on Windows. It supports **homerow modifiers** (e.g., using `a` as Ctrl), **hold actions** (e.g., hold `h` to snap a window left), **combos** (e.g., `a` + `h` for an actions), and **instant combos** for quick triggers. Benefits include streamlined workflows, reduced finger movement, and highly customizable shortcuts, making it ideal for power users, programmers, and anyone seeking a more efficient keyboard experience.
-Similar to my `MouseGestures.ahk` and `8BitDo.ahk` scripts, it uses **context-aware mappings** with global fallbacks, so you only define common actions once. With `OnWebsite.ahk` and Descolada's UIA library, you can create **website-specific** hold shortcuts as well. If enough interest, I may expand that context specificity to combos as well.
+**QMK-style keyboard features for AutoHotkey v2 on Windows — without needing a programmable keyboard.**
 
-## Examples:
-- Custom layer/combos - Holding the 'v' key - and pressing either h, j, k, l for media controls, or 'c' and keys on the right of the keyboard for a numpad without moving your hands. Any key can become it's own 'modifier' of sorts.
-- Hold-Actions - Holding 'c' alone past threshold to trigger an action like launch/hide a program. Can be context sensitive.
-- Homerow mods - 'a' can be mapped to control, 's' to Shift, and'd' to Win when held down, normally, 'a', 's', 'd' - pressed with k will send Control+Shift+Win+k.
+QMK.ahk lets you build firmware-style keyboard behavior in AutoHotkey: home-row modifiers, layers, combos, chords, tap/hold actions, hotkeys, hotstrings, and context-aware shortcuts. Your mappings stay easy to write in AHK, while timing-sensitive keyboard processing runs in a native Zig core.
 
-## Benefits/key keatures inlude:
-- Ability to try QMK/ZMK-like functionatlity without the need to flash firmware. Edits can be made quickly and reloaded.
-- Simpler Syntax, plugs directly into your existing Autohotkey functions
-- Buffering and Rollover Support - keys are buffered with a 'First-in-first-out' approach. Even if you release your keys in a slightly different order, they are processed by the oldest in the queue.
-- Home row modifiers - supports 'stacking' - if 'a' is control, and 's' is shift, you can press 'asl' and have it send the keys ^+l. One benefit is reduced movement of fingers from the homerow, potentially reducing wrist pain.
-- SetupCombo and Setupinstantcombo - any two keys can trigger an action. The former allows rollover support.
-- Very accurate timing from query performance counter - to the microsecond, even if on heavy load or on battery saver.
-- Light. Tested on a 10+ year-old laptop with no noticeable delay/lag.
--  QMK.ahk does not affect the functionality of normal hotkeys/hotstrings from firing.
-
-## Basic timing logic:
-  - Keys that are pressed separately go through very little processing, sent nearly insantly through the buffer
-  - When 2 or more keys overlap
-        - Normal typing - All released withing threshold (200ms) => sent as taps in order they were typed 
-        - 'Quick' - retroactive and proactive
-                - Either 200ms after the first key was pressed down (retroactive), or if the second key pressed up before then (proactive) >> action occurs
-        - Held - if held past threshold, modifiers, combos, etc. Fires with little to no delay
-------
-
-## Quick Example
-
-In `QMK.ahk`, define user shortcuts: (this file has user configurations and the #includes for the QMKClass.ahk and other dependencies
-
-``
-    QMK.SetupModifier("a", "Ctrl")  ; 'a' acts as Ctrl when held
-    QMK.SetupHold("h", ["global"], (*) => mm.SnapLeft("A"))  ; Hold h to snap left
-    QMK.SetupCombo("a", "h", (*) => mm.SnapLeft("A"))  ; a+h snaps window left
-    QMK.SetupInstantCombo("a", ";", (*) => SendEvent("{Backspace}"))  ; a+; instantly sends Backspace
-    QMK.SetupHold("k", ["youtube.com"], (*) => Send("{Space}"))  ; Hold k on YouTube to play/pause. 
-``
+Use it to turn an ordinary Windows keyboard into a deeply programmable keyboard without flashing firmware or moving your automation logic out of AutoHotkey.
 
 ---
 
-## Getting Started
+## What is QMK.ahk?
 
-Download the source code on Github, unzip it, and open `QMK.ahk` in an editor to view or modify user-defined shortcuts. I have a few suggestions to get you started, but feel free to edit as you'd like! The core logic resides in `QMKClass.ahk` File. Dependencies are included in the same folder, so double-clicking `QMK.ahk` should run it.
+Projects such as QMK and ZMK provide powerful keyboard features at the firmware level, but normally require compatible hardware and firmware configuration.
 
----
+QMK.ahk brings many of the same ideas to **any Windows keyboard** while keeping configuration in **AutoHotkey v2**.
 
-**Required Files:**
-``
-    #Requires AutoHotkey v2.0
-    #Include QMK ; Core class for shortcut logic
-    #Include QMKConfig.ahk  ; User-defined shortcuts
-``
+For example, you can:
 
-**Recommended Dependencies (optional, can be deleted if not needed):**
-``
-    #Include OnWebsite.ahk  ; URL caching for website-specific shortcuts
-    #Include UIA\Lib\UIA.ahk  ; Browser automation
-    #Include UIA\Lib\UIA_Browser.ahk  ; Browser-specific automation
-    #Include MonitorManager.ahk  ; Window snapping and monitor management
-    #Include scroll.ahk  ; Smooth Scrolling
-    #Include mouse.ahk  ; Move the mouse using a layer
-    #Include TabActivator.ahk  ; Activate a specific tab in Edge. If already on tab, cycle through to next instance. Updates in background.
-``
+- tap `A` normally, but hold it to use it as `Ctrl`
+- hold `C` and use the right side of the keyboard as a numpad
+- press `J` + `K` together for `Escape`
+- give a key separate tap, hold, double-tap, and repeated-tap behavior
+- create 2-key combos and 3–5 key chords
+- make shortcuts behave differently in specific apps, windows, or websites
+- keep complex actions as normal AutoHotkey callbacks
+- keep simple key sends entirely in the native fast path
+
+QMK.ahk is designed to coexist with the rest of your AutoHotkey setup rather than replace it.
 
 ---
 
-## Sample Default Mappings
+## Features
 
-These mappings in `QMK.ahk` mirror my `MouseGestures.ahk` for consistency, focusing on window management, navigation, and productivity. Customize them in `QMK.ahk` or add your own. Commented-out sections are included for inspiration and can be enabled if the referenced scripts are available.
-
-**Modifiers:**
-
-    QMK.SetupModifier("a", "Ctrl")
-    QMK.SetupModifier("s", "Shift")
-    QMK.SetupModifier("d", "Win")
-    QMK.SetupModifier("f", "Alt")
-    QMK.SetupModifier("j", "Alt")
-    QMK.SetupModifier("k", "Win")
-    QMK.SetupModifier("l", "Shift")
-    QMK.SetupModifier(";", "Ctrl")
-
-**Window Management (a layer + arrow keys/other, with MonitorManager):**
-
-    QMK.SetupCombo("a", "h", (*) => mm.SnapLeft("A"))  ; Snap left
-    QMK.SetupCombo("a", "l", (*) => mm.SnapRight("A"))  ; Snap right
-    QMK.SetupCombo("a", "j", (*) => mm.GestureDL())  ; Restore/minimize
-    QMK.SetupCombo("a", "k", (*) => mm.GestureUR())  ; Maximize/fullscreen
-    QMK.SetupCombo("a", "g", (*) => Send("!{Tab}"))  ; Switch apps
-    QMK.SetupInstantCombo("a", ";", (*) => SendEvent("{Backspace}"))  ; Backspace
-    QMK.SetupInstantCombo("a", "'", (*) => SendEvent("^{Backspace}"))  ; Delete word backward
-    QMK.SetupInstantCombo(";", "a", (*) => SendEvent("^{a}"))  ; Select all
-
-**Additional Window Management (move to next screen):**
-
-    QMK.SetupCombo("x", "h", (*) => mm.ThrowLeft("A"))  ; Throw left
-    QMK.SetupCombo("x", "l", (*) => mm.ThrowRight("A"))  ; Throw right
-    QMK.SetupCombo("m", "h", (*) => mm.ThrowLeft("A"))  ; Throw left
-    QMK.SetupCombo("m", "l", (*) => mm.ThrowRight("A"))  ; Throw right
-
-**Numpad Layer (c for Calculator):**
-
-    QMK.SetupCombo("c", "n", (*) => SendEvent("1"))
-    QMK.SetupCombo("c", "m", (*) => SendEvent("1"))
-    QMK.SetupCombo("c", ",", (*) => SendEvent("2"))
-    QMK.SetupCombo("c", ".", (*) => SendEvent("3"))
-    QMK.SetupCombo("c", "j", (*) => SendEvent("4"))
-    QMK.SetupCombo("c", "k", (*) => SendEvent("5"))
-    QMK.SetupCombo("c", "l", (*) => SendEvent("6"))
-    QMK.SetupCombo("c", "u", (*) => SendEvent("7"))
-    QMK.SetupCombo("c", "i", (*) => SendEvent("8"))
-    QMK.SetupCombo("c", "o", (*) => SendEvent("9"))
-    QMK.SetupCombo("c", "Space", (*) => SendEvent("0"))
-    QMK.SetupCombo("c", ";", (*) => SendEvent("{Backspace}"))
-    QMK.SetupCombo("c", "'", (*) => SendEvent("^{Backspace}"))
-    QMK.SetupCombo("c", "[", (*) => SendEvent("."))
-    QMK.SetupCombo("c", "Enter", (*) => mouse.click("c"))
-
-**Mouse Control (d layer):**
-
-    QMK.SetupCombo("d", "l", (*) => SetTimer(mouse.move, -1))  ; Move right
-    QMK.SetupCombo("d", "i", (*) => SetTimer(() => Scroll.up(), -1))  ; Scroll up
-    QMK.SetupCombo("d", "j", (*) => SetTimer(mouse.move, -1))  ; Move down
-    QMK.SetupCombo("d", "k", (*) => SetTimer(mouse.move, -1))  ; Move up
-    QMK.SetupCombo("d", "f", (*) => SendEvent("+#{s}"))  ; Snipping tool
-    QMK.SetupCombo("d", "h", (*) => SetTimer(mouse.move, -1))  ; Move left
-    QMK.SetupCombo("d", "u", (*) => Send("{Browser_Back}"))  ; Browser back
-    QMK.SetupCombo("d", "p", (*) => Send("{Browser_Forward}"))  ; Browser forward
-    QMK.SetupCombo("d", ",", (*) => SetTimer(() => Scroll.Down(), -1))  ; Scroll down
-    QMK.SetupCombo("d", "Enter", (*) => SetTimer(() => mouse.click("d"), -1))  ; Click
-
-**Editing (f layer for cursor movement):**
-
-    QMK.SetupCombo("f", "h", (*) => SendEvent("^{Left}"))  ; Move left word
-    QMK.SetupCombo("f", "k", (*) => SendEvent("{Up}"))  ; Move up
-    QMK.SetupCombo("f", "j", (*) => SendEvent("{Down}"))  ; Move down
-    QMK.SetupCombo("f", "l", (*) => SendEvent("^{Right}"))  ; Move right word
-    QMK.SetupInstantCombo("f", ";", (*) => SendEvent("{Backspace}"))  ; Backspace
-    QMK.SetupInstantCombo("f", "'", (*) => SendEvent("{Delete}"))  ; Delete
-
-**Larger Movements (g layer for Go):**
-
-    QMK.SetupInstantCombo("g", ";", (*) => SendEvent("^{Backspace}"))  ; Delete word backward
-    QMK.SetupInstantCombo("g", "'", (*) => SendEvent("^{Delete}"))  ; Delete word forward
-    QMK.SetupCombo("g", "j", (*) => Send("{Down}"))  ; Move down
-    QMK.SetupCombo("g", "k", (*) => Send("{Up}"))  ; Move up
-    QMK.SetupCombo("g", "h", (*) => Send("{Home}"))  ; Move to line start
-    QMK.SetupCombo("g", "l", (*) => Send("{End}"))  ; Move to line end
-    QMK.SetupCombo("g", "u", (*) => Send("^{Home}"))  ; Move to document start
-    QMK.SetupCombo("g", "n", (*) => Send("^{End}"))  ; Move to document end
-
-**Escape Combo:**
-
-    QMK.SetupInstantCombo("j", "k", (*) => Send("{Escape}"))
-    QMK.SetupInstantCombo("k", "j", (*) => Send("{Escape}"))
-
-**Program Layer (p layer, commented out for inspiration):**
-
-    ; QMK.SetupCombo("p", "a", (*) => anki.activate(true))
-    ; QMK.SetupCombo("p", "z", (*) => zen.activate(true))
-    ; QMK.SetupCombo("p", "s", (*) => spotify.activate(true))
-    ; QMK.SetupCombo("p", "m", (*) => messenger.activate(true))
-    ; QMK.SetupCombo("p", "w", (*) => word.activate())
-    ; QMK.SetupCombo("p", "d", (*) => runchecklist())
-    ; QMK.SetupCombo("p", "o", (*) => Onenote.activate(true))
-    ; QMK.SetupCombo("p", "u", (*) => outlookdesktop.activate(true))
-
-**Shift Layer (s layer for Shift-modified keys):**
-
-    QMK.SetupInstantCombo("s", ";", (*) => SendEvent("{:}"))  ; Send colon
-    QMK.SetupInstantCombo("s", "'", (*) => SendEvent("{`"}"))  ; Send quote
-
-**Space Combos (commented out to avoid typing issues):**
-
-    ; QMK.SetupCombo("a", "Space", (*) => SendEvent("a "))
-    ; QMK.SetupCombo("s", "Space", (*) => SendEvent("s "))
-    ; QMK.SetupCombo("d", "Space", (*) => SendEvent("d "))
-    ; QMK.SetupCombo("f", "Space", (*) => SendEvent("f "))
-
-**Volume Layer (v layer, commented out for inspiration):**
-
-    ; QMK.SetupCombo("v", "j", (*) => media.volume.down())
-    ; QMK.SetupCombo("v", "k", (*) => media.volume.up())
-    ; QMK.SetupCombo("v", "m", (*) => media.volume.mute())
-    ; QMK.SetupCombo("v", "l", (*) => media.next())
-    ; QMK.SetupCombo("v", "h", (*) => media.previous())
-    ; QMK.SetupCombo("v", "p", (*) => media.toggleplaypause())
-
-**Website Layer (w layer, commented out for inspiration, requires UIA):**
-
-    ; QMK.SetupCombo("w", "c", (*) => chatgpt.screenshot())
-    ; QMK.SetupCombo("w", "d", (*) => globals.activaterun("Google Docs", "https://docs.google.com/"))
-    ; QMK.SetupCombo("w", "g", (*) => globals.activaterun("Gmail", "https://mail.google.com"))
-    ; QMK.SetupCombo("w", "j", (*) => globals.activaterun("ChatGPT", "https://chatgpt.com/?temporary-chat=true&model=gpt-5-instant"))
-    ; QMK.SetupCombo("w", "k", (*) => globals.activaterun("Claude", "https://claude.ai/new"))
-    ; QMK.SetupCombo("w", "n", (*) => globals.activaterun("NotebookLM", "https://notebooklm.google.com/"))
-    ; QMK.SetupCombo("w", "r", (*) => globals.activaterun("Grok", "https://grok.com"))
-    ; QMK.SetupCombo("w", "p", (*) => globals.activaterun("Spotify for Creators", "https://creators.spotify.com/pod/show/7lNvdBsvWKhblGyVn80JTo/episodes?pageSize=30"))
-    ; QMK.SetupCombo("w", "y", (*) => globals.activaterun("Youtube", "https://www.youtube.com"))
-
-**Spotify Playlist (dot layer, commented out for inspiration):**
-
-    ; QMK.SetupCombo(".", "l", (*) => Spotify.PlayPlaylist("Liked Songs"))
-
-**Holds (hjkl for window management, global):**
-
-    QMK.SetupHold("h", ["global"], (*) => mm.SnapLeft("A"))  ; Snap left
-    QMK.SetupHold("j", ["global"], (*) => mm.GestureDL())  ; Restore/minimize
-    QMK.SetupHold("k", ["global"], (*) => mm.GestureUR())  ; Maximize/fullscreen
-    QMK.SetupHold("l", ["global"], (*) => mm.SnapRight("A"))  ; Snap right
-    QMK.SetupHold("u", ["global"], (*) => mm.GestureUL())  ; Close window
-    QMK.SetupHold("o", ["global"], (*) => mm.GestureUR())  ; Maximize/fullscreen
-    QMK.SetupHold("n", ["global"], (*) => mm.GestureDL())  ; Restore/minimize
-    QMK.SetupHold("m", ["global"], (*) => mm.GestureDL())  ; Restore/minimize
-    QMK.SetupHold(".", ["global"], (*) => mm.GestureDR())  ; Minimize
-
-**Program-Specific Holds (commented out for inspiration):**
-
-    ; QMK.SetupHold("k", ["ahk_exe ONENOTE.EXE"], (*) => onenote.GestureUR())
-    ; QMK.SetupHold("j", ["ahk_exe ONENOTE.EXE"], (*) => onenote.GestureDL())
-    ; QMK.SetupHold("j", ["ahk_exe anki.exe"], (*) => anki.GestureDL())
-    ; QMK.SetupHold("k", ["ahk_exe anki.exe"], (*) => anki.GestureUR())
-
-**Program Activation Holds (commented out for inspiration):**
-
-    ; QMK.SetupHold("a", ["global"], (*) => anki.activate(true))
-    ; QMK.SetupHold("c", ["global"], (*) => globals.activaterun("Google Calendar", "https://calendar.google.com/calendar/u/0/r"))
-    ; QMK.SetupHold("d", ["global"], (*) => runchecklist())
-    ; QMK.SetupHold("e", ["global"], (*) => edge.activate(true))
-    ; QMK.SetupHold("f", ["global"], (*) => globals.activaterun("ChatGPT", "https://chatgpt.com/?temporary-chat=true&model=gpt-4o"))
-    ; QMK.SetupHold("g", ["global"], (*) => globals.activaterun("Gmail", "https://mail.google.com/mail/u/0/#inbox"))
-    ; QMK.SetupHold("p", ["global"], (*) => phonelink.activate(true))
-    ; QMK.SetupHold("q", ["global"], (*) => (globals.quitminimize(), Activatelast()))
-    ; QMK.SetupHold("r", ["global"], (*) => Send("^{home}"))
-    ; QMK.SetupHold("s", ["global"], (*) => spotify.activate(true))
-    ; QMK.SetupHold("t", ["global"], (*) => Run(lib "\Simple Timer.ahk"))
-    ; QMK.SetupHold("v", ["global"], (*) => vscode.activate(true))
-    ; QMK.SetupHold("w", ["global"], (*) => Send("^{w}"))
-    ; QMK.SetupHold("x", ["global"], (*) => SecondaryMenus())
-    ; QMK.SetupHold("y", ["global"], (*) => globals.activaterun("Youtube", "https://www.youtube.com"))
-    ; QMK.SetupHold("Tab", ["global"], (*) => Send("!{Tab}"))
-    ; QMK.SetupHold("[", ["global"], (*) => MenuMap["programs"].Show())
-    ; QMK.SetupHold(";", ["global"], (*) => MenuMap["Spotify"].Show())
-
-**Win32 Context Menus Holds:**
-
-    QMK.SetupHold("l", ["ahk_class #32768"], (*) => (ToolTip(">>>> Moved Right!"), Send("^#{Right}"), SetTimer((*) => ToolTip(), -1000)))  ; Move to right desktop
-    QMK.SetupHold("h", ["ahk_class #32768"], (*) => (ToolTip("<<<< Moved Left!"), Send("^#{Left}"), SetTimer((*) => ToolTip(), -1000)))  ; Move to left desktop
-    QMK.SetupHold("k", ["ahk_class #32768"], (*) => (ToolTip("New Desktop!"), SetTimer(() => ToolTip(), -1000), Send("^#d")))  ; New desktop
-    QMK.SetupHold("j", ["ahk_class #32768"], (*) => (ToolTip("Closed Desktop!"), SetTimer((*) => ToolTip(), -1000), Send("^#{F4}")))  ; Close desktop
-
-**Timer Combos (commented out for inspiration):**
-
-    ; QMK.SetupCombo("1", "m", (*) => (Run(lib "\Simple Timer.ahk 1"), SetTimer((*) => ToolTip(), -1000), ToolTip("1 minute timer started!")))
-    ; QMK.SetupCombo("2", "m", (*) => (Run(lib "\Simple Timer.ahk 2"), SetTimer((*) => ToolTip(), -1000), ToolTip("2 minute timer started!")))
-    ; QMK.SetupCombo("3", "m", (*) => (Run(lib "\Simple Timer.ahk 3"), SetTimer((*) => ToolTip(), -1000), ToolTip("3 minute timer started!")))
-    ; QMK.SetupCombo("4", "m", (*) => (Run(lib "\Simple Timer.ahk 4"), SetTimer((*) => ToolTip(), -1000), ToolTip("4 minute timer started!")))
-    ; QMK.SetupCombo("5", "m", (*) => (Run(lib "\Simple Timer.ahk 5"), SetTimer((*) => ToolTip(), -1000), ToolTip("5 minute timer started!")))
-    ; QMK.SetupCombo("6", "m", (*) => (Run(lib "\Simple Timer.ahk 6"), SetTimer((*) => ToolTip(), -1000), ToolTip("6 minute timer started!")))
-    ; QMK.SetupCombo("7", "m", (*) => (Run(lib "\Simple Timer.ahk 7"), SetTimer((*) => ToolTip(), -1000), ToolTip("7 minute timer started!")))
-    ; QMK.SetupCombo("8", "m", (*) => (Run(lib "\Simple Timer.ahk 8"), SetTimer((*) => ToolTip(), -1000), ToolTip("8 minute timer started!")))
-    ; QMK.SetupCombo("9", "m", (*) => (Run(lib "\Simple Timer.ahk 9"), SetTimer((*) => ToolTip(), -1000), ToolTip("9 minute timer started!")))
-    ; QMK.SetupCombo("1", "0", (*) => (Run(lib "\Simple Timer.ahk 10"), SetTimer((*) => ToolTip(), -1000), ToolTip("10 minute timer started!")))
-    ; and so on
-
-**Virtual Key Remappings (only when physical Ctrl is not pressed):**
-
-    ; #HotIf !GetKeyState('LControl', 'p')
-    ; ^#h::ToolTip("<<<< Moved Left!"), Send("^#{Left}"), SetTimer(() => ToolTip(), -500)
-    ; ^#l::ToolTip(">>>> Moved Right!"), Send("^#{Right}"), SetTimer(() => ToolTip(), -500)
-    ; ^+l::^+Right
-    ; ^+h::^+Left
-    ; ^+k::+Up
-    ; ^+j::+Down
-    ; ^+c::^c
-    ; #HotIf
+| Feature | What it does |
+|---|---|
+| **Modifiers** | Turn ordinary keys into `Ctrl`, `Shift`, `Alt`, or `Win` while held |
+| **Combos** | Trigger an action from two overlapping keys |
+| **Chords** | Trigger actions from 3-, 4-, or 5-key combinations |
+| **Taps & Holds** | Give one key different behavior when tapped or held |
+| **Double Taps** | Assign actions to rapid repeated presses |
+| **Hotkeys** | Register QMK-managed hotkeys with AHK-style callbacks or native actions |
+| **Hotstrings** | Expand typed abbreviations through the QMK runtime |
+| **Contexts** | Scope mappings to global, executable, window class, title, browser, or website contexts |
+| **Rollover / buffering** | Preserve physical press order during overlapping key presses |
+| **Quiet period** | Distinguish intentional combos from normal fast typing |
+| **Native sends** | Keep simple key-output actions inside the Zig runtime |
+| **AHK callbacks** | Call your existing AutoHotkey functions for complex actions |
+| **Multiple backends** | Use Interception, a low-level Windows hook, or AutoHotkey-based capture/send paths |
+| **Runtime configuration** | Add and change mappings in AHK without recompiling the Zig core |
 
 ---
 
-## Context Priority Order
+## Quick example
 
-The `QMK` class in `QMKClass.ahk` checks contexts for holds in this order, triggering the first match:
+```ahk
+#Requires AutoHotkey v2.0
 
-1. Win32 Context Menus (`ahk_class #32768`)
-2. Website-specific (URL matching, requires `OnWebsite.ahk`)
-3. Window title matches
-4. Window class matches
-5. Browser fallback (`browser` or `browsers`)
-6. Window executable matches
-7. Global mappings (last resort)
+; Home-row modifiers
+QMK.SetupModifiers([
+    ["a", "Ctrl"],
+    ["s", "Shift"],
+    ["d", "Win"],
+    ["f", "Alt"],
+])
 
-Combos and instant combos are primarily global, with limited context sensitivity (e.g., Win32 context menus).
+; Two-key combos
+QMK.SetupCombos([
+    ["j", "k", "global", QMK.SendKeyDirect("{Escape}"), "instant"],
+    ["a", ";", "global", QMK.SendKeyDirect("{Backspace}"), "instant"],
+])
 
----
+; Hold U and send Win+Up to maximize the active window
+QMK.SetupHolds([
+    ["u", ["global"], (*) => Send("#{Up}")],
+])
 
-## Best Practices/Integration
+; Explicit .email hotstring (no wildcard trigger)
+QMK.SetupHotstrings([
+    [":X:.email", "global", "demo@example.com"],
+])
+```
 
-- **Order Matters**: For holds, list more specific contexts first (e.g., `studio.youtube.com` before `youtube.com`):
-
-        QMK.SetupHold("k", ["studio.youtube.com"], (*) => MsgBox("YouTube Studio"))
-        QMK.SetupHold("k", ["youtube.com"], (*) => Send("{Space}"))
-
-- **Integrates With**:
-  - `MouseGestures.ahk`: Mouse-based gestures.
-  - `8BitDo.ahk`: Controller-based shortcuts.
-  - `Macropad.ahk`: Custom macro pad support.
-  - All use `OnWebsite.ahk` for URL-sensitive hold actions. Consolidate into one script to reduce URL queries.
-
-- **Typing Compatibility**: The script prioritizes normal typing during rapid key presses (within `comboQuietPeriod`). Use instant combos for critical shortcuts to avoid delays.
-
-- **Combos vs. Holds**: Combos override modifier behavior when defined. Holds support full context sensitivity, while combos are mostly global.
-
----
-
-## Advanced Configuration
-
-Customize settings in the `QMK` class within `QMKClass.ahk`:
-
-    static userconfig := {
-        timingMode: "accurate",  ; "accurate" (microsecond timing) or "fast" (A_TickCount, less reliable)
-        holdThreshold: 150,  ; ms to trigger hold actions (150-200ms recommended)
-        maxBufferSize: 50,  ; Max keys in buffer (default 50)
-        comboQuietPeriod: 150,  ; ms to prioritize typing over combos
-        modifierThreshold: 200,  ; ms for stacking modifiers
-        maxHoldTime: 1000,  ; ms before suppressing long-held keys
-        maxholdsupresseskeys: true  ; Suppress keys held past maxHoldTime
-    }
-
-**Fallback Behaviors**:
-- **Short Tap**: Sends the key as-is (e.g., tap `a` sends `a`).
-- **Long Hold**: Triggers hold action if defined, else sends key.
-- **Combos**: Trigger after `comboQuietPeriod` or immediately for instant combos.
-- **Modifiers**: Activate after `holdThreshold` or when paired with another key.
-
-Customize behaviors in `BufferKeyUp` or `ProcessQueue` methods in `QMKClass.ahk`.
+The mappings are defined in AutoHotkey. QMK.ahk passes them into the native runtime at startup and handles keyboard events from there. For more complete patterns and API shapes, continue to the [full tutorial](docs/TUTORIAL.md).
 
 ---
 
-## Troubleshooting
+## Installation
 
-**Combo/Hold Not Firing:**
-- Check for more specific context overriding global hold mappings.
-- Ensure key is registered in `allKeys` in `QMKClass.ahk`.
-- Verify `holdThreshold` or `comboQuietPeriod` isn’t too long.
-- Check for physical modifier interference (e.g., holding Ctrl).
+### Requirements
 
-**Typing Issues:**
-- Increase `comboQuietPeriod` in `QMKClass.ahk` for faster typing.
-- Use instant combos for critical shortcuts.
-- Comment out space combos in `QMK.ahk` if modifiers + space misfire:
+- **Windows**
+- **AutoHotkey v2**
+- The QMK.ahk project files / release
 
-        ; QMK.SetupCombo("a", "Space", (*) => SendEvent("a "))
+**Interception is optional.** You can try QMK.ahk without installing a keyboard driver by using the built-in non-Interception input/output paths.
 
-**Buffer Stuck:**
-- Press a traditional modifier (e.g., Ctrl, Alt) to clear the buffer.
-- Call `QMK.EmergencyReset()` from `QMKClass.ahk` to reset all state.
+### Where to start
 
-**Performance Issues:**
-- Enable `ProcessSetPriority("High")` in `QMK.ahk` for better responsiveness.
-- Adjust `timingMode` to `"fast"` in `QMKClass.ahk` for older hardware, though less reliable.
+1. Read the **[Installation Guide](docs/INSTALL.md)** for the first setup and backend choice.
+2. Use the **[Tutorial](docs/TUTORIAL.md)** for the full API and backend behavior.
+3. Use the **[GUI Compiler Guide](docs/COMPILER_GUI.md)** only if you need to rebuild the native core.
+4. Open **[Quick_Demo.ahk](Quick_Demo.ahk)** for a runnable sanitized example.
+
+### Basic setup
+
+1. Download or clone QMK.ahk.
+2. Make sure AutoHotkey v2 is installed.
+3. Include/load `QMKInterception.ahk` from your script.
+4. Add your `QMK.Setup...()` definitions.
+5. Run the script.
+6. Open **QMK Settings** to choose or adjust the input and send backends if needed.
+
+For driver setup, backend selection, verification, and troubleshooting, see the **[Installation Guide](docs/INSTALL.md)**. For the click-by-click native rebuild flow, see the **[GUI Compiler Guide](docs/COMPILER_GUI.md)**.
+
+### Optional Interception driver
+
+The Interception driver is only needed when you choose the `interception` capture or send path. Download the driver from the [official Interception repository](https://github.com/oblitum/Interception), extract it, and run its command-line installer from an **Administrator Command Prompt**. Do not double-click the installer:
+
+```text
+install-interception.exe
+install-interception.exe /install
+```
+
+If Windows marks the downloaded archive or DLLs as blocked, use the file's **Properties → Unblock** option before extracting or running it. For the driver's reconnect/frozen-device issue, see the separate [Interception driver fix](https://github.com/hygorostrowskij/interception-driver-fix). The complete procedure and safety warnings are in the **[Installation Guide](docs/INSTALL.md)**.
 
 ---
 
-## Performance Optimizations
+## API overview
 
-For older hardware, uncomment these settings in `QMK.ahk`:
+QMK.ahk intentionally keeps the public setup API small (see the tutorial for concrete examples). Most configuration is done through these calls:
 
-    ProcessSetPriority("High")  ; Prioritize script execution
-    SetKeyDelay(-1, 0)
-    SetDefaultMouseSpeed(0)
-    SetMouseDelay(0)
-    SetControlDelay(-1)
-    SetWinDelay(-1)
-    A_HotkeyInterval := 2000
-    A_MaxHotkeysPerInterval := 200
+```ahk
+QMK.SetupModifiers([...])
+QMK.SetupCombos([...])
+QMK.SetupChords([...])
+QMK.SetupHolds([...])
+QMK.SetupTaps([...])
+QMK.SetupTap({...})
+QMK.SetupDoubleTaps([...])
+QMK.SetupHotstrings([...])
+QMK.SetupHotkeys([...])
+```
+
+### Actions
+
+A mapping can either:
+
+- execute an **AutoHotkey callback**, or
+- use a native QMK action such as `QMK.SendKeyDirect(...)` to send a keystroke through the dll, which is faster than a round-trip back to AutoHotkey. 
+
+```ahk
+; Native key send with a 2-key combo
+QMK.SetupCombos([
+["j", "k", "global", QMK.SendKeyDirect("{Escape}"), "instant"],
+)]
+
+; AutoHotkey callback with a Setup Hold
+QMK.SetupHolds([
+["h", ["global"], (*) => MyWindowManager.SnapLeft()]
+)]
+```
+
+### Contexts
+
+These strings help determine what contexts (which program needs to be active) for a given context to run. More on this here: (**[Tutorial](docs/TUTORIAL.md)**.:
+
+```ahk
+"global"
+"ahk_exe Code.exe"
+"ahk_class Chrome_WidgetWin_1"
+"ahk_class Chrome_WidgetWin_1 ahk_exe msedge.exe"
+"docs.google.com"
+```
+---
+
+## Example uses
+
+### Home-row modifiers
+
+Keep your fingers on the home row while using normal modifier shortcuts:
+
+```ahk
+QMK.SetupModifiers([
+    ["a", "Ctrl"],
+    ["s", "Shift"],
+    ["d", "Win"],
+    ["f", "Alt"],
+])
+```
+
+Tap the keys normally to type `a`, `s`, `d`, and `f`; hold them as part of another shortcut to use their modifier behavior.
+
+### Layers without a dedicated layer key
+
+A regular key can effectively become a layer key through combos. For example, holding `C` with nearby keys can create a numpad, while another key can become a navigation or media layer.
+
+### Context-aware automation
+
+The same physical shortcut can have application-specific behavior with a global fallback, so you do not need to maintain separate hotkey systems for every program.
+
+---
+
+## How it works
+
+QMKInterception.ahk uses a native Zig DLL and either a low-level keyboardhook to add extra layers of shortcuts underneath your existing AutoHotkey setup. When AutoHotkey Runs, your shortcuts are passed into the dll, then keystrokes are interpretted by the dll before 
+
+```text
+Your AutoHotkey script
+        │
+        │ QMK.Setup...()
+        ▼
+     QMKInterception.ahk
+        │
+        │ runtime configuration
+        ▼
+   QMKCore (Zig)
+        │
+        ├─ key state / timing
+        ├─ buffering / rollover
+        ├─ modifiers
+        ├─ combos / chords
+        ├─ taps / holds
+        ├─ hotkeys / hotstrings
+        └─ context matching
+        │
+        ▼
+ native key action or AHK callback
+```
+
+User mappings are runtime data, and much like AutoHotkey itself, the runtime shape makes it easy to edit your shortcuts without needing to compile to native code. If you notice startup lag, however, you can transpile your shortcuts to native Zig and and AutoHotkey callback table. 
+
+---
+
+## Performance
+
+I built this to be as fast and memory safe as possible. Sometimes I am amazed at how fast native code executes. 
+
+Current development measurements reported by the project are approximately:
+
+| Build | Median processing latency |
+|---|---:|
+| PGO-optimized native core | ~2 µs |
+| Standard Zig build | ~10 µs |
+
+After initial runtime initialization, current development measurements are roughly **1~10 us** for key delay - roughly 7-8 thousand times faster than a 60 Hz screen takes to update one frame.
+
+---
+
+## Input and output options
+
+For those that may not be able to install the interception driver (which requires administrator priveleges), a low-level hook in the native code also exists. The current project supports input/output paths including:
+
+- **Interception** — optional low-level keyboard capture/send path
+- **Windows low-level hook** — driver-free capture path
+- **AutoHotkey hotkeys** — AHK-based capture option
+- **SendInput** — driver-free output option
+
+The settings interface can be used to select the appropriate backend for your system.
+
+---
+
+## Documentation
+
+### [Installation Guide](docs/INSTALL.md)
+Install QMKInterception.ahk, include into your script, choose an input/output backend, verify the setup, troubleshoot common problems, and optionally build QMKCore yourself.
+
+### [Tutorial](docs/TUTORIAL.md)
+Learn the API progressively: modifiers, contexts, combos, timing, chords, taps/holds, hotstrings, hotkeys, settings, and advanced configuration.
+
+### [GUI Compiler Guide](docs/COMPILER_GUI.md)
+Rebuild the native core from QMK Settings, choose the standard Zig build or optional Full PGO Build, and understand which outputs stay local.
+
+The copy/pasteable examples are in the sanitized [Tutorial](docs/TUTORIAL.md) and [quick demo](Quick_Demo.ahk). They use generic contexts and callbacks rather than a user's personal shortcut files.
+
+---
+
+## Benefits of QMKInterception.ahk vs. keyboard firmware
+
+QMKInterception.ahk is inspired by the flexibility of QMK/ZMK-style keyboard configuration, but instead of compiling on the firmware level, it is emulated at a sofware level.
+
+This means:
+
+- no special programmable keyboard is required
+- no firmware flashing is required
+- configuration can be changed reloaded quickly
+- mappings can directly call AutoHotkey functions. 
+- Shortcuts can react to the active application, window, or website
+
+
+--
+
+## Notes
+
+- Normal AutoHotkey hotkeys and hotstrings can coexist with QMK.ahk mappings.
+- Keyboard hardware rollover limitations can prevent some large physical chords from being detected.
+- Interception is optional; users who do not want a driver can use the available driver-free paths.
+- Most users never need to compile the Zig core themselves.
+
+---
+
+## Project history
+
+QMK.ahk began as a pure AutoHotkey implementation of QMK-like keyboard behavior. As the project grew, the timing-sensitive runtime was moved into Zig while keeping the user-facing configuration and callbacks in AutoHotkey.
+
+The current design focuses on a small AHK API, runtime-configured shortcuts, low-latency native processing, and compatibility with existing AutoHotkey automation.

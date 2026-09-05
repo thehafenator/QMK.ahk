@@ -1,0 +1,41 @@
+# QMK local/generated output
+.zig-cache/
+zig-out/
+lib/.zig-cache/
+lib/zig-out/
+lib/TrainingData/*.ll
+lib/TrainingData/*.profdata
+lib/TrainingData/*.profraw
+lib/TrainingData/*.rsp
+lib/generated_native_user_shortcuts/
+lib/zig_user_shortcut_transpiler/out/
+lib/zig_user_shortcut_transpiler/user_shortcut_transpiler.exe
+lib/zig_user_shortcut_transpiler/user_shortcut_transpiler.exe.source.sha256
+
+# Local compiler state and generated backups
+qmk_compiler_status.ini
+*.building.*
+lib/QMKCorePGOTrainer.exe.source.sha256
+lib/QMKCorePGOTrainer.exe
+lib/QMKCorePGOTrainer.pdb
+lib/QMKTrainingData.dll
+lib/QMKCoreProfiling.dll
+*.bak
+*.backup*
+QMKVariables.ahk.original.bak
+QMKVariables.ahk.backup*.ahk
+
+# User-specific mapping inputs and generated callback output
+QMKHotkeys.ahk
+QMK Shortcuts.ahk
+Hotstrings.ahk
+8BitDo_QMK.ahk
+*_Compiled_Callbacks.ahk
+QMKInterceptionK.ahk
+
+# Native build diagnostics and duplicate local tool builds
+*.pdb
+lib/zig_user_shortcut_transpiler/main.exe
+lib/zig_user_shortcut_transpiler/test_suite.exe
+lib/zig_user_shortcut_transpiler/zig_user_shortcut_transpiler_new*
+lib/zig_user_shortcut_transpiler/zig_user_shortcut_transpiler_live*

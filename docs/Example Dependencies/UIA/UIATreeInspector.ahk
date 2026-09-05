@@ -1,4 +1,4 @@
-﻿#include <UIA>
+#include <UIA>
 
 TreeInspector()
 

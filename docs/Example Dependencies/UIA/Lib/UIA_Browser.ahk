@@ -1,4 +1,4 @@
-﻿/*
+/*
 	Introduction:
 	UIA_Browser implements some methods to help automate browsers with UIAutomation framework.
 
