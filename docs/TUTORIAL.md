@@ -1,4 +1,4 @@
-# QMK.ahk Tutorial
+# QMKInterception.ahk Tutorial
 
 This tutorial is the sanitized reference for the public API. The examples are intentionally small so you can copy individual patterns into your own shortcut file.
 
@@ -8,14 +8,14 @@ Before using these snippets, include the repository-root `QMKInterception.ahk` f
 
 ## Optional Interception driver setup
 
-The tutorial works with the driver-free `llhook` and `sendinput` paths. If you choose an `interception` backend, install the driver from the [official Interception releases](https://github.com/oblitum/Interception/releases) page:
+This script can be configured to use AutoHotkey-Native Keyboard Hooks, a Low-level keyboard hook, or through the Interception driver, an open-source kernel filter. If you choose an `interception` backend, install the driver from the [official Interception releases](https://github.com/oblitum/Interception/releases) page. Please read and use at your own risk.
 
 1. Unblock the downloaded archive in **Properties** if Windows offers that option.
 2. Open **Command Prompt as administrator** in the extracted `command line installer` directory.
 3. Run `install-interception.exe`, then run `install-interception.exe /install` as instructed by the installer.
 4. Select `auto` or `interception` in **QMK Settings**.
 
-For devices that freeze after reconnecting or waking from sleep, consult the separate [Interception driver fix](https://github.com/hygorostrowskij/interception-driver-fix). It is installed separately and is not part of this QMK.ahk package. Read the [full installation and safety guide](INSTALL.md) before enabling driver-backed blocking.
+For devices that freeze after reconnecting or waking from sleep, consult the separate github project [Interception driver fix](https://github.com/hygorostrowskij/interception-driver-fix). It is another separately maintained from the original source. Read the [full installation and safety guide](INSTALL.md) before enabling driver-backed blocking.
 
 For the native rebuild workflow, use the separate [GUI Compiler Guide](COMPILER_GUI.md). It explains when compilation is needed, how to open the compiler through QMK Settings, and the difference between **Zig Build** and **Full PGO Build**.
 
