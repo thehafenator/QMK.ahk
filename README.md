@@ -1,14 +1,8 @@
-# QMK.ahk
+# QMKInterception.ahk
 
-**QMK-style keyboard features for AutoHotkey v2 on Windows — without needing a programmable keyboard.**
+**What is QMK.ahk?.**
 
-QMK.ahk lets you build firmware-style keyboard behavior in AutoHotkey: home-row modifiers, layers, combos, chords, tap/hold actions, hotkeys, hotstrings, and context-aware shortcuts. Your mappings stay easy to write in AHK, while timing-sensitive keyboard processing runs in a native Zig core.
-
-Use it to turn an ordinary Windows keyboard into a deeply programmable keyboard without flashing firmware or moving your automation logic out of AutoHotkey.
-
----
-
-## What is QMK.ahk?
+This project aims to let you build your own custom-shortcuts beyond what AutoHotkey alone is typically capable of. This allows firmware-style keyboard behavior in AutoHotkey: home-row modifiers, layers, combos, chords, tap/hold actions, hotkeys, hotstrings, and context-aware shortcuts. Your mappings stay easy to write in AHK, while timing-sensitive keyboard processing runs in a native Zig core.
 
 Projects such as QMK and ZMK provide powerful keyboard features at the firmware level, but normally require compatible hardware and firmware configuration.
 
@@ -19,13 +13,13 @@ For example, you can:
 - tap `A` normally, but hold it to use it as `Ctrl`
 - hold `C` and use the right side of the keyboard as a numpad
 - press `J` + `K` together for `Escape`
-- give a key separate tap, hold, double-tap, and repeated-tap behavior
-- create 2-key combos and 3–5 key chords
+- give a key separate action for a quick tap, a hold, and double-tap
+- create any 2-key shorcut through combos and 3–5 key chords
 - make shortcuts behave differently in specific apps, windows, or websites
 - keep complex actions as normal AutoHotkey callbacks
-- keep simple key sends entirely in the native fast path
+- keep simple key sends entirely in the native fast path through the Dll.
 
-QMK.ahk is designed to coexist with the rest of your AutoHotkey setup rather than replace it.
+QMKInterception.ahk is designed to run a layer beneath your existing AutoHotkey setup rather than replace it.
 
 ---
 
