@@ -391,8 +391,8 @@ The file-by-file staging review is complete. No personal shortcut or hotstring s
 
 **Status:** Ready for user review and push; not pushed to GitHub.
 
-- Local checkpoint: commit `488099f` (`Prepare sanitized private release package`).
-- Branch state: `qmk-release-sync-2026-08-29` is one commit ahead of its tracked GitHub branch, with a clean working tree.
+- Local checkpoint: current local `HEAD` includes the staged package, dependency audit, and Interception documentation pass.
+- Branch state: `qmk-release-sync-2026-08-29` is four commits ahead of its tracked GitHub branch, with a clean working tree. Nothing has been pushed.
 - Manifest check: all required compiler, interception, MemoryModule, Zig, transpiler-source, tutorial, and demo paths exist in the release tree.
 - Demo layout check: `docs/Quick_Demo.ahk` resolves the package entry point and all seven dependency includes under `docs/Example Dependencies`.
 - Privacy check: no personal mapping files, personal paths, or personal shortcut/hotstring content are tracked. The remaining filename references are intentional exclusion rules in the transpiler and repository hygiene files.
@@ -410,6 +410,13 @@ The file-by-file staging review is complete. No personal shortcut or hotstring s
 - Compiler dependency closure: the checked-in Zig sources and clean build-option baselines are present. The transpiler executable, PGO trainer executable, training DLL, profiling DLL, generated shortcut bundle, and other build outputs are intentionally generated locally by the compiler.
 - External prerequisites are limited to Windows, AutoHotkey v2, and the optional Interception driver for driver-backed operation. Zig 0.16 is required for native rebuilds; LLVM/Clang/MSVC are required only for the full PGO path.
 - Documentation correction: README and installation guidance now identify `QMKInterception.ahk` as the actual library entry file; `QMK.ahk` remains the project name.
+
+## Interception documentation pass 2026-09-05
+
+- Reviewed the upstream [AutoHotInterception README](https://github.com/evilC/AutoHotInterception/blob/master/README.md), the [official Interception repository](https://github.com/oblitum/Interception), and the separate [Interception driver fix](https://github.com/hygorostrowskij/interception-driver-fix).
+- Added the official elevated-command-prompt installation sequence (`install-interception.exe`, then `install-interception.exe /install`) to README.md, docs/INSTALL.md, and docs/TUTORIAL.md.
+- Documented archive/DLL unblocking, backend selection, device-ID/reconnect troubleshooting, and low-level input safety warnings.
+- Kept the boundary explicit: the external driver and AutoHotInterception wrapper are optional external prerequisites; their installers, service files, wrapper DLLs, and sample trees are not copied into this QMK.ahk release.
 
 Deliberate remaining caveats:
 

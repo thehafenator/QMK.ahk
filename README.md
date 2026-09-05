@@ -105,6 +105,17 @@ The mappings are defined in AutoHotkey. QMK.ahk passes them into the native runt
 
 For driver setup, backend selection, verification, troubleshooting, and native-core compilation, see **[Installation Guide](docs/INSTALL.md)**.
 
+### Optional Interception driver
+
+The Interception driver is only needed when you choose the `interception` capture or send path. Download the driver from the [official Interception repository](https://github.com/oblitum/Interception), extract it, and run its command-line installer from an **Administrator Command Prompt**. Do not double-click the installer:
+
+```text
+install-interception.exe
+install-interception.exe /install
+```
+
+If Windows marks the downloaded archive or DLLs as blocked, use the file's **Properties → Unblock** option before extracting or running it. For the driver's reconnect/frozen-device issue, see the separate [Interception driver fix](https://github.com/hygorostrowskij/interception-driver-fix). The complete procedure and safety warnings are in the **[Installation Guide](docs/INSTALL.md)**.
+
 ---
 
 ## API overview

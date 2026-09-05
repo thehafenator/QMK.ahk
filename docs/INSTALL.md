@@ -117,28 +117,50 @@ The tutorial uses **150 ms** as the default quiet-period example.
 
 QMK.ahk does **not** require Interception. You can use the Zig low-level hook (`llhook`) for capture and `SendInput` for output without installing a keyboard driver.
 
-If you want the Interception capture/send path, install the official Interception driver:
+If you want the Interception capture/send path, install the official driver from the [Interception repository](https://github.com/oblitum/Interception). QMK.ahk does not need AutoHotInterception's AHK wrapper or sample files; this release already contains its own QMK runtime and native import files.
 
-- **Interception — official repository:** https://github.com/oblitum/Interception
+### Driver installation
 
-Follow the installation instructions in that repository and restart Windows if its installer requires it.
+1. Download the latest release from the official [Interception releases](https://github.com/oblitum/Interception/releases) page.
+2. Before extracting a downloaded archive, open its **Properties** and select **Unblock** if Windows shows that option. This prevents Windows attachment blocking from stopping the installer or DLLs later.
+3. Extract the archive to a temporary location.
+4. Open **Command Prompt as administrator** and change to the extracted `command line installer` directory.
+5. Run the installer without arguments first. It displays the installation usage:
+
+   ```text
+   install-interception.exe
+   ```
+
+6. Run the install command it specifies:
+
+   ```text
+   install-interception.exe /install
+   ```
+
+Do not launch `install-interception.exe` by double-clicking it. Restart Windows only if the installer or Windows requests it.
+
+After installation, open **QMK Settings** and select the desired backends:
+
+- **Input Backend: `auto`** — prefer Interception when available and fall back when it is not.
+- **Input Backend: `interception`** — require Interception for capture.
+- **Send Mode: `auto`** — prefer Interception sending and fall back to `SendInput`.
+- **Send Mode: `interception`** — require Interception for sending.
+
+Start with `auto` unless you specifically need to require the driver. If the driver is not installed or is unavailable, use `llhook` plus `sendinput` for a driver-free configuration.
 
 ### Interception driver fix
 
-QMK.ahk's Settings GUI also links to the following Interception driver fix:
+The [Interception driver fix](https://github.com/hygorostrowskij/interception-driver-fix) is a separate project; it is not included in QMK.ahk and does not include the driver. Its documentation describes it as a companion fix for devices that become unresponsive after hot-plugging or waking from sleep. It is also relevant to the classic Interception device-ID exhaustion problem, where keyboard IDs can pass 10 or mouse IDs can pass 20.
 
-- **Interception driver fix:** https://github.com/hygorostrowskij/interception-driver-fix
+Install the driver first, then follow the fix project's own [release and installation instructions](https://github.com/hygorostrowskij/interception-driver-fix/releases). Do not copy its installer or service files into the QMK.ahk release.
 
-This separate project is recommended when Windows runs into Interception's **10-keyboard / 10-mouse device limit**, which can become especially noticeable with reconnecting Bluetooth devices.
+If you use AutoHotInterception's optional monitor tools for troubleshooting, tick one device at a time. Those tools are not required by QMK.ahk, and the device IDs may change after unplug/replug or hibernate/resume.
 
-After installing Interception, open **QMK Settings** and choose one of these configurations:
+### Safety warning
 
-- **Input Backend: `auto`** — use Interception when available and fall back when it is not.
-- **Input Backend: `interception`** — require Interception for capture.
-- **Send Mode: `auto`** — prefer Interception sending when available and fall back to SendInput.
-- **Send Mode: `interception`** — require Interception for sending.
+Interception operates below normal Windows input handling. A blocked key can affect system-level shortcuts, so keep a second keyboard or other recovery method available, preserve a reliable QMK exit/reload shortcut, and know how to disable the script in Safe Mode before enabling blocking behavior.
 
-For most users who install the driver, `auto` is the recommended starting point because QMK.ahk can still fall back if Interception is unavailable.
+The upstream [AutoHotInterception README](https://github.com/evilC/AutoHotInterception/blob/master/README.md) provides additional driver warnings and troubleshooting context. It is a separate AHK wrapper project, not a dependency of this QMK.ahk release.
 
 ## Website-specific contexts
 

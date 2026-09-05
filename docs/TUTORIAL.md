@@ -6,6 +6,17 @@ Callback names in these examples—such as `ActivateExampleApp()`, `ShowExampleM
 
 Before using these snippets, include the repository-root `QMKInterception.ahk` file from your own AutoHotkey script.
 
+## Optional Interception driver setup
+
+The tutorial works with the driver-free `llhook` and `sendinput` paths. If you choose an `interception` backend, install the driver from the [official Interception releases](https://github.com/oblitum/Interception/releases) page:
+
+1. Unblock the downloaded archive in **Properties** if Windows offers that option.
+2. Open **Command Prompt as administrator** in the extracted `command line installer` directory.
+3. Run `install-interception.exe`, then run `install-interception.exe /install` as instructed by the installer.
+4. Select `auto` or `interception` in **QMK Settings**.
+
+For devices that freeze after reconnecting or waking from sleep, consult the separate [Interception driver fix](https://github.com/hygorostrowskij/interception-driver-fix). It is installed separately and is not part of this QMK.ahk package. Read the [full installation and safety guide](INSTALL.md) before enabling driver-backed blocking.
+
 ## Before you start: add safety controls
 
 The reference file recommends these four shortcuts first:
