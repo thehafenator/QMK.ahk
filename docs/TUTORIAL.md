@@ -27,7 +27,7 @@ The reference file recommends these four shortcuts first:
 QMK.SetupHotkeys([
     ["*#Escape", "global", "panicExit", true],
     ["*^+r", "global", "nativeReload", true],
-    ["^!s", "global", QMK.SuspendExempt((*) => QMK.Suspend())],
+    ["^!s", "global", "nativeSuspend", true],
     ["F1", "global", (*) => QMKUserConfig.ShowGui()],
 ])
 ```
