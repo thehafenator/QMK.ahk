@@ -402,6 +402,15 @@ The file-by-file staging review is complete. No personal shortcut or hotstring s
 - Zig syntax check: passed for `QMKCore.zig`, `build.zig`, `QMKCorePGOTrainer.zig`, `build_options_pgo.zig`, `build_options_runtime.zig`, `blank_user_shortcuts.zig`, and `zig_user_shortcut_transpiler/user_shortcut_transpiler.zig`.
 - AHK check limitation: the available checker copies scripts to a temporary directory, so it cannot resolve the package’s intentional relative includes; the compiler check timed out without a reported syntax error. No AHK runtime or demo execution was performed.
 
+## Dependency verification pass 2026-09-05
+
+- Quick demo dependency closure: all seven direct demo dependencies exist under `docs/Example Dependencies`.
+- Core include closure: `QMKInterception.ahk` resolves `lib/MemoryModule/MemoryModule.ahk` and `lib/QMKVariables.ahk`; the demo resolves the repository-root `QMKInterception.ahk` and all seven `docs/Example Dependencies` files.
+- Optional UIA tool: `docs/Example Dependencies/UIA/UIATreeInspector.ahk` uses the standard AHK library form `#Include <UIA>`, resolved by its sibling `UIA/Lib/UIA.ahk`. It is not required by the quick demo, but its local library file is present.
+- Compiler dependency closure: the checked-in Zig sources and clean build-option baselines are present. The transpiler executable, PGO trainer executable, training DLL, profiling DLL, generated shortcut bundle, and other build outputs are intentionally generated locally by the compiler.
+- External prerequisites are limited to Windows, AutoHotkey v2, and the optional Interception driver for driver-backed operation. Zig 0.16 is required for native rebuilds; LLVM/Clang/MSVC are required only for the full PGO path.
+- Documentation correction: README and installation guidance now identify `QMKInterception.ahk` as the actual library entry file; `QMK.ahk` remains the project name.
+
 Deliberate remaining caveats:
 
 1. The demo and native runtime were not executed, per the syntax-only instruction.

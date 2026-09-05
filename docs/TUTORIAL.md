@@ -2,7 +2,9 @@
 
 This tutorial is the sanitized reference for the public API. The examples are intentionally small so you can copy individual patterns into your own shortcut file.
 
-Some callback names in the examples—such as `media`, `edge`, `mm`, `VDA`, or `globals`—come from the author's personal AutoHotkey setup. Treat them as placeholders for your own functions.
+Callback names in these examples—such as `ActivateExampleApp()`, `ShowExampleMedia()`, and `MoveExampleWindow()`—are generic placeholders. Replace them with functions from your own AutoHotkey setup.
+
+Before using these snippets, include the repository-root `QMKInterception.ahk` file from your own AutoHotkey script.
 
 ## Before you start: add safety controls
 
@@ -103,8 +105,8 @@ QMK.SetupCombos([
     ["a", "h", "global", QMK.SendKeyDirect("^{Left}")],
     ["a", "l", "global", QMK.SendKeyDirect("^{Right}")],
     ["a", ";", "global", QMK.SendKeyDirect("{Backspace}"), "instant"],
-    ["CapsLock", "e", "global", (*) => edge.activate(true)],
-    ["v", "k", "global", (*) => media.volume.up(), "instant"],
+    ["CapsLock", "e", "global", (*) => ActivateExampleApp()],
+    ["v", "k", "global", (*) => ShowExampleMedia(), "instant"],
 ])
 ```
 
@@ -127,7 +129,7 @@ You can technically wrap the same call in a callback:
 but that adds a DLL → AutoHotkey → DLL round trip. Use a callback when you actually need AutoHotkey logic:
 
 ```ahk
-["CapsLock", "e", "global", (*) => edge.activate(true)]
+["CapsLock", "e", "global", (*) => ActivateExampleApp()]
 ```
 
 For multi-step actions, a named function is often clearer:
@@ -185,8 +187,8 @@ Chords extend the same idea to 3–5 physical keys.
 QMK.SetupChords([
     ["a", "s", "j", "global", QMK.SendKeyDirect("+{Down}")],
     ["a", "s", "k", "global", QMK.SendKeyDirect("+{Up}")],
-    ["a", "s", "d", "h", "global", (*) => VDA.GoLeft()],
-    ["a", "s", "d", "l", "global", (*) => VDA.GoRight()],
+    ["a", "s", "d", "h", "global", (*) => MoveExampleWindow("left")],
+    ["a", "s", "d", "l", "global", (*) => MoveExampleWindow("right")],
     ["a", "s", "d", "f", "o", "global", (*) => ActivateExampleApp()],
 ])
 ```
@@ -216,11 +218,11 @@ Single keys can trigger actions based on how they are pressed.
 
 ```ahk
 QMK.SetupHolds([
-    ["e", ["global"], (*) => edge.activate(true)],
-    ["h", ["global"], (*) => mm.SnapLeft()],
-    ["j", ["global"], (*) => mm.GestureDL()],
-    ["k", ["global"], (*) => mm.GestureUR()],
-    ["l", ["global"], (*) => mm.SnapRight("A")],
+    ["e", ["global"], (*) => ActivateExampleApp()],
+    ["h", ["global"], (*) => MoveExampleWindow("left")],
+    ["j", ["global"], (*) => MoveExampleWindow("down-left")],
+    ["k", ["global"], (*) => MoveExampleWindow("up-right")],
+    ["l", ["global"], (*) => MoveExampleWindow("right")],
 ])
 ```
 

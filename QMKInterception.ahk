@@ -3933,7 +3933,7 @@ native side can rebuild once instead of once per shortcut:
     QMK.SetupHotkeys([
         ["*#Escape", "global", "panicExit", true],
         ["*^+r", "global", "nativeReload", true],
-        ["^Space", "global", (*) => globals.togglealwaysontop()],
+        ["^Space", "global", (*) => ToggleExampleAlwaysOnTop()],
         ["!h", "global", QMK.SendKeyDirect("{Left}")]
     ])
 

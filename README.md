@@ -98,7 +98,7 @@ The mappings are defined in AutoHotkey. QMK.ahk passes them into the native runt
 
 1. Download or clone QMK.ahk.
 2. Make sure AutoHotkey v2 is installed.
-3. Include/load QMK.ahk from your script.
+3. Include/load `QMKInterception.ahk` from your script.
 4. Add your `QMK.Setup...()` definitions.
 5. Run the script.
 6. Open **QMK Settings** to choose or adjust the input and send backends if needed.

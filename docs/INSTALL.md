@@ -18,6 +18,8 @@ Download or clone the QMK.ahk repository and keep its included files together.
 
 The current project embeds the native QMKCore machine code for easier distribution. User shortcuts remain in AutoHotkey and are registered with the native core at runtime.
 
+The AutoHotkey library entry point is the repository-root file `QMKInterception.ahk`. Include that file from your own script, then add your own `QMK.Setup...()` definitions.
+
 ## 2. Start with the no-driver path
 
 QMK.ahk can be tried without installing Interception.
@@ -161,7 +163,7 @@ Prefer the native send path when the action is only a key send:
 Use an AutoHotkey callback for application logic:
 
 ```ahk
-["CapsLock", "e", "global", (*) => edge.activate(true)]
+["CapsLock", "e", "global", (*) => ActivateExampleApp()]
 ```
 
 A callback makes a round trip to AutoHotkey. That is normally fine, but `QMK.SendKeyDirect()` avoids the AHK callback round trip for simple sends.
