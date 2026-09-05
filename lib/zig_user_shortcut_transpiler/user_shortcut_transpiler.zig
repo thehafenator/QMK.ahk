@@ -270,7 +270,9 @@ fn objectAction(gpa: std.mem.Allocator, family: []const u8, object: []const u8) 
     if (std.mem.eql(u8, family, "Taps"))
         return objectFieldAny(gpa, object, &[_][]const u8{ "tapAction", "tap", "action" });
     if (std.mem.eql(u8, family, "Hotstrings"))
-        return objectFieldAny(gpa, object, &[_][]const u8{ "action", "replacement", "callback" });
+        // Mirror QMK.SetupHotstringsCompat: callback wins, then text, then
+        // replacement. Keep `action` as a legacy alias for captured rows.
+        return objectFieldAny(gpa, object, &[_][]const u8{ "callback", "text", "replacement", "action" });
     return objectFieldAny(gpa, object, &[_][]const u8{ "callback", "action", "target" });
 }
 
@@ -368,6 +370,14 @@ fn normalizeObjectSource(gpa: std.mem.Allocator, family: []const u8, object: []c
         const threshold = objectFieldAny(gpa, object, &[_][]const u8{ "thresholdMs", "threshold" }) orelse "0";
         const cleanup = objectFieldAny(gpa, object, &[_][]const u8{ "cleanupCallback", "cleanup" }) orelse "\"\"";
         text = try std.fmt.allocPrint(gpa, "[{s}, {s}, {s}, {s}, {s}, {s}, {s}]", .{ key, context, action, hold, threshold, cleanup, suspend_expr });
+    } else if (std.mem.eql(u8, family, "TapHolds")) {
+        const tap = objectFieldAny(gpa, object, &[_][]const u8{ "tapCallback", "tap" }) orelse "\"\"";
+        const hold = objectFieldAny(gpa, object, &[_][]const u8{ "holdCallback", "hold" }) orelse "\"\"";
+        const threshold = objectFieldAny(gpa, object, &[_][]const u8{ "thresholdMs", "threshold" }) orelse "200";
+        const cleanup = objectFieldAny(gpa, object, &[_][]const u8{ "cleanupCallback", "cleanup" }) orelse "\"\"";
+        // QMK.SetupTapHoldsCompat consumes the canonical array shape
+        // [key, context, threshold, tap, hold, cleanup, suspend].
+        text = try std.fmt.allocPrint(gpa, "[{s}, {s}, {s}, {s}, {s}, {s}, {s}]", .{ key, context, threshold, tap, hold, cleanup, suspend_expr });
     } else if (std.mem.eql(u8, family, "Holds") or std.mem.eql(u8, family, "DoubleTaps")) {
         const action = objectAction(gpa, family, object) orelse return null;
         text = try std.fmt.allocPrint(gpa, "[{s}, {s}, {s}, {s}]", .{ key, context, action, suspend_expr });

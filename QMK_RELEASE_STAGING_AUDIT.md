@@ -419,6 +419,16 @@ The file-by-file staging review is complete. No personal shortcut or hotstring s
 - Kept the boundary explicit: the external driver and AutoHotInterception wrapper are optional external prerequisites; their installers, service files, wrapper DLLs, and sample trees are not copied into this QMK.ahk release.
 - Added `docs/COMPILER_GUI.md` as the single click-by-click guide for QMK Settings → Compile → Open PGO Compiler, including standard Zig versus optional PGO, transpiler behavior, and generated-output boundaries.
 
+## Production sync pass 2026-09-05
+
+- Inspected the actual active directory `production_code`; the user-provided spelling `production\_code` is not a literal directory name on this machine.
+- Excluded all snapshot/archive/refactor/test directories, personal mapping files, personal compiled callbacks, generated shortcut output, PDBs, executables, caches, profiles, backups, and machine-specific configuration.
+- Rejected the active `QMKconfig.ini` because it names personal shortcut sources and absolute local tool paths.
+- Rejected the active `QMKInterception.ahk` as a direct copy because its documentation examples contain personal application/context callbacks and its MemoryModule include points outside the release package. The already-sanitized release wrapper remains authoritative.
+- Rejected the active `QMKCompiler.ahk` as a direct copy because it would replace the release compiler's source-freshness checks with executable-presence-only reuse behavior. The release compiler's transpiler/trainer rebuild policy remains authoritative.
+- Rejected the active `lib/QMKVariables.ahk` after decoding its embedded payload found personal compiled material. The sanitized release QMKCore/QMKVariables pairing was restored and preserved.
+- Retained the active transpiler source's generic compatibility improvements for hotstring object fields and `TapHolds`; it contains no personal mappings. No runtime build or demo execution was performed.
+
 Deliberate remaining caveats:
 
 1. The demo and native runtime were not executed, per the syntax-only instruction.
