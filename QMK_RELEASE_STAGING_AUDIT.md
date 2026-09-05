@@ -392,7 +392,7 @@ The file-by-file staging review is complete. No personal shortcut or hotstring s
 **Status:** Ready for user review and push; not pushed to GitHub.
 
 - Local checkpoint: current local `HEAD` includes the staged package, dependency audit, and Interception documentation pass.
-- Branch state: `qmk-release-sync-2026-08-29` is four commits ahead of its tracked GitHub branch, with a clean working tree. Nothing has been pushed.
+- Branch state: `qmk-release-sync-2026-08-29` is one commit ahead of its tracked GitHub branch, with a clean working tree. The GUI compiler documentation commit is local and has not been pushed.
 - Manifest check: all required compiler, interception, MemoryModule, Zig, transpiler-source, tutorial, and demo paths exist in the release tree.
 - Demo layout check: `docs/Quick_Demo.ahk` resolves the package entry point and all seven dependency includes under `docs/Example Dependencies`.
 - Privacy check: no personal mapping files, personal paths, or personal shortcut/hotstring content are tracked. The remaining filename references are intentional exclusion rules in the transpiler and repository hygiene files.
@@ -417,6 +417,7 @@ The file-by-file staging review is complete. No personal shortcut or hotstring s
 - Added the official elevated-command-prompt installation sequence (`install-interception.exe`, then `install-interception.exe /install`) to README.md, docs/INSTALL.md, and docs/TUTORIAL.md.
 - Documented archive/DLL unblocking, backend selection, device-ID/reconnect troubleshooting, and low-level input safety warnings.
 - Kept the boundary explicit: the external driver and AutoHotInterception wrapper are optional external prerequisites; their installers, service files, wrapper DLLs, and sample trees are not copied into this QMK.ahk release.
+- Added `docs/COMPILER_GUI.md` as the single click-by-click guide for QMK Settings → Compile → Open PGO Compiler, including standard Zig versus optional PGO, transpiler behavior, and generated-output boundaries.
 
 Deliberate remaining caveats:
 

@@ -244,6 +244,8 @@ That is allowed. QMK mappings and ordinary AutoHotkey hotkeys/hotstrings can coe
 
 You only need this section if you want to rebuild QMKCore for your machine, change native Zig code, or regenerate the embedded machine code.
 
+For the straightforward click-by-click workflow, see **[QMK Compiler GUI](COMPILER_GUI.md)**. The short version is: open **QMK Settings** → **Compile** → **Open PGO Compiler**, then choose **Zig Build** for the normal build or **Full PGO Build** for the optional PGO path.
+
 ### Option A: standard Zig build
 
 The current tutorial specifies:
@@ -251,7 +253,7 @@ The current tutorial specifies:
 - AutoHotkey v2
 - **Zig 0.16**
 
-Open the included QMK compiler, select **Zig Settings** / the **Zig Build** path, confirm its dependency indicators are satisfied, then compile.
+In the compiler window, open **Compiler Settings** → **Zig Build Settings**, confirm the required paths and Zig 0.16, save, and click **Zig Build**.
 
 The compiler writes the rebuilt native core back into the project's embedded QMK variables according to the tutorial.
 
@@ -262,7 +264,7 @@ The PGO path requires a Windows build environment with:
 - MSVC build tools
 - Clang / LLVM
 
-Open the QMK compiler, select **PGO Settings** / **Full PGO Build**, resolve any dependencies shown as missing, then compile.
+In the compiler window, open **Compiler Settings** → **PGO Settings**, resolve every missing dependency, save, and click **Full PGO Build**.
 
 The reference file reports approximately ~2 µs median key latency for its PGO development build versus ~10 µs for its standard Zig build. Treat these as project development measurements rather than guaranteed machine-independent results.
 

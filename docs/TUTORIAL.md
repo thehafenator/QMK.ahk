@@ -17,6 +17,8 @@ The tutorial works with the driver-free `llhook` and `sendinput` paths. If you c
 
 For devices that freeze after reconnecting or waking from sleep, consult the separate [Interception driver fix](https://github.com/hygorostrowskij/interception-driver-fix). It is installed separately and is not part of this QMK.ahk package. Read the [full installation and safety guide](INSTALL.md) before enabling driver-backed blocking.
 
+For the native rebuild workflow, use the separate [GUI Compiler Guide](COMPILER_GUI.md). It explains when compilation is needed, how to open the compiler through QMK Settings, and the difference between **Zig Build** and **Full PGO Build**.
+
 ## Before you start: add safety controls
 
 The reference file recommends these four shortcuts first:
@@ -442,7 +444,7 @@ Requires:
 - AutoHotkey v2
 - Zig 0.16
 
-Use **Zig Settings** / **Zig Build** in the included QMK compiler, satisfy the dependency checks, then compile.
+Open **QMK Settings** → **Compile** → **Open PGO Compiler**, then use **Compiler Settings** → **Zig Build Settings** to confirm the paths. Save the settings and click **Zig Build**.
 
 ## Full PGO build
 
@@ -451,7 +453,7 @@ Requires a Windows build environment with:
 - MSVC build tools
 - Clang / LLVM
 
-Use **PGO Settings** / **Full PGO Build**, satisfy the dependency checks, then compile.
+Open **QMK Settings** → **Compile** → **Open PGO Compiler**, then use **Compiler Settings** → **PGO Settings** to resolve the tool paths. Save the settings and click **Full PGO Build**.
 
 The compiler is described as rebuilding the core and embedding the resulting native code into `QMKVariables.ahk` in the project's `lib` folder.
 

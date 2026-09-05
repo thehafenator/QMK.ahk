@@ -94,6 +94,13 @@ The mappings are defined in AutoHotkey. QMK.ahk passes them into the native runt
 
 **Interception is optional.** You can try QMK.ahk without installing a keyboard driver by using the built-in non-Interception input/output paths.
 
+### Where to start
+
+1. Read the **[Installation Guide](docs/INSTALL.md)** for the first setup and backend choice.
+2. Use the **[Tutorial](docs/TUTORIAL.md)** for the full API and backend behavior.
+3. Use the **[GUI Compiler Guide](docs/COMPILER_GUI.md)** only if you need to rebuild the native core.
+4. Open **[Quick_Demo.ahk](docs/Quick_Demo.ahk)** for a runnable sanitized example.
+
 ### Basic setup
 
 1. Download or clone QMK.ahk.
@@ -103,7 +110,7 @@ The mappings are defined in AutoHotkey. QMK.ahk passes them into the native runt
 5. Run the script.
 6. Open **QMK Settings** to choose or adjust the input and send backends if needed.
 
-For driver setup, backend selection, verification, troubleshooting, and native-core compilation, see **[Installation Guide](docs/INSTALL.md)**.
+For driver setup, backend selection, verification, and troubleshooting, see the **[Installation Guide](docs/INSTALL.md)**. For the click-by-click native rebuild flow, see the **[GUI Compiler Guide](docs/COMPILER_GUI.md)**.
 
 ### Optional Interception driver
 
@@ -260,6 +267,9 @@ Install QMK.ahk, choose an input/output backend, verify the setup, troubleshoot 
 
 ### [Tutorial](docs/TUTORIAL.md)
 Learn the API progressively: modifiers, contexts, combos, timing, chords, taps/holds, hotstrings, hotkeys, settings, and advanced configuration.
+
+### [GUI Compiler Guide](docs/COMPILER_GUI.md)
+Rebuild the native core from QMK Settings, choose the standard Zig build or optional Full PGO Build, and understand which outputs stay local.
 
 The copy/pasteable examples are in the sanitized [Tutorial](docs/TUTORIAL.md) and [quick demo](docs/Quick_Demo.ahk). They use generic contexts and callbacks rather than a user's personal shortcut files.
 
